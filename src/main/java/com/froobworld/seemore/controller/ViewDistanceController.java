@@ -1,11 +1,16 @@
 package com.froobworld.seemore.controller;
 
 import com.froobworld.seemore.SeeMore;
+import com.froobworld.seemore.config.DurationParser;
+import com.froobworld.seemore.config.ResolvedProfile;
 import com.froobworld.seemore.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
+import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,13 +23,18 @@ public class ViewDistanceController {
     private final Map<UUID, Integer> targetSendDistanceMap = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledTask> viewDistanceUpdateTasks = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledTask> sendDistanceUpdateTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, String> selectedProfileNames = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> simulationDistances = new ConcurrentHashMap<>();
+    private final Set<UUID> afkPlayers = ConcurrentHashMap.newKeySet();
     private final ViewDistanceUpdateLogger viewDistanceUpdateLogger;
+    private ScheduledTask permissionCheckTask;
 
     public ViewDistanceController(SeeMore seeMore) {
         this.seeMore = seeMore;
         this.viewDistanceUpdateLogger = new ViewDistanceUpdateLogger(seeMore);
         seeMore.getSchedulerHook().runRepeatingTask(this::cleanMaps, 1200, 1200);
         Bukkit.getPluginManager().registerEvents(new ViewDistanceUpdater(this), seeMore);
+        schedulePermissionChecks();
     }
 
     public void updateAllPlayers() {
@@ -36,25 +46,71 @@ public class ViewDistanceController {
     }
 
     public void setTargetViewDistance(Player player, int clientViewDistance, boolean testDelay, boolean initialUpdate) {
-        int floor = player.getWorld().getSimulationDistance();
-        int ceiling = Math.min(seeMore.getSeeMoreConfig().worldSettings.of(player.getWorld()).maximumViewDistance.get(), 32);
+        UUID playerId = player.getUniqueId();
+        ResolvedProfile profile = seeMore.getSeeMoreConfig().resolveProfile(player);
+        int simulationDistance = player.getSimulationDistance();
+        ViewDistancePolicy.Result result = ViewDistancePolicy.calculate(
+                clientViewDistance,
+                profile.maximumViewDistance(),
+                player.getWorld().getViewDistance(),
+                simulationDistance,
+                afkPlayers.contains(playerId),
+                seeMore.getSeeMoreConfig().afkSettings().maximumViewDistance()
+        );
 
-        // Default to the world's view distance if the configured ceiling is negative
-        ceiling = ceiling < 0 ? player.getWorld().getViewDistance() : ceiling;
-
-        targetViewDistanceMap.put(player.getUniqueId(), Math.max(floor, Math.min(ceiling, clientViewDistance)));
-        targetSendDistanceMap.put(player.getUniqueId(), Math.max(2, Math.min(ceiling, clientViewDistance)) + 1);
+        selectedProfileNames.put(playerId, profile.name());
+        simulationDistances.put(playerId, simulationDistance);
+        targetViewDistanceMap.put(playerId, result.viewDistance());
+        targetSendDistanceMap.put(playerId, result.sendDistance());
 
         // Update the view distance with a delay if it is being lowered
         long delay = 0;
         try {
             if (testDelay && player.getViewDistance() > targetViewDistanceMap.get(player.getUniqueId())) {
-                delay = seeMore.getSeeMoreConfig().updateDelay.get();
+                delay = seeMore.getSeeMoreConfig().updateDelayTicks();
             }
         } catch (Exception ignored) {}
 
         updateSendDistance(player);
         updateViewDistance(player, delay, clientViewDistance, initialUpdate);
+    }
+
+    public void setAfk(Player player, boolean afk) {
+        boolean changed = afk ? afkPlayers.add(player.getUniqueId()) : afkPlayers.remove(player.getUniqueId());
+        if (changed) {
+            setTargetViewDistance(player, player.getClientViewDistance(), false, false);
+        }
+    }
+
+    public boolean isAfk(Player player) {
+        return afkPlayers.contains(player.getUniqueId());
+    }
+
+    public void refreshCachedState(Player player) {
+        ResolvedProfile profile = seeMore.getSeeMoreConfig().resolveProfile(player);
+        String cachedProfile = selectedProfileNames.get(player.getUniqueId());
+        int simulationDistance = player.getSimulationDistance();
+        Integer cachedSimulationDistance = simulationDistances.get(player.getUniqueId());
+        if (!Objects.equals(profile.name(), cachedProfile)
+                || !Objects.equals(simulationDistance, cachedSimulationDistance)) {
+            setTargetViewDistance(player, player.getClientViewDistance(), false, false);
+        }
+    }
+
+    public void reloadConfiguration() {
+        schedulePermissionChecks();
+        updateAllPlayers();
+    }
+
+    public void removePlayer(Player player) {
+        UUID playerId = player.getUniqueId();
+        selectedProfileNames.remove(playerId);
+        simulationDistances.remove(playerId);
+        afkPlayers.remove(playerId);
+        targetSendDistanceMap.remove(playerId);
+        targetViewDistanceMap.remove(playerId);
+        cancelAndRemove(sendDistanceUpdateTasks, playerId);
+        cancelAndRemove(viewDistanceUpdateTasks, playerId);
     }
 
     private void updateSendDistance(Player player) {
@@ -65,7 +121,7 @@ public class ViewDistanceController {
         updateDistance(player, delay, 0, targetViewDistanceMap, viewDistanceUpdateTasks, (p, viewDistance) -> {
             if (p.getViewDistance() != viewDistance || initialUpdate) { // always update if we've not seen them before
                 p.setViewDistance(viewDistance);
-                if (seeMore.getSeeMoreConfig().logChanges.get()) {
+                if (seeMore.getSeeMoreConfig().logChanges()) {
                     viewDistanceUpdateLogger.logUpdate(player, String.format("Set view distance of %s to %s (client view distance is %s).", p.getName(), viewDistance, clientViewDistance));
                 }
             }
@@ -106,6 +162,37 @@ public class ViewDistanceController {
         viewDistanceUpdateTasks.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
         targetSendDistanceMap.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
         targetViewDistanceMap.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
+        selectedProfileNames.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
+        simulationDistances.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
+        afkPlayers.removeIf(uuid -> Bukkit.getPlayer(uuid) == null);
+    }
+
+    private void schedulePermissionChecks() {
+        if (permissionCheckTask != null) {
+            permissionCheckTask.cancel();
+            permissionCheckTask = null;
+        }
+        Duration interval = seeMore.getSeeMoreConfig().permissionCheckInterval();
+        if (interval == null) {
+            return;
+        }
+        long ticks = DurationParser.toTicks(interval);
+        permissionCheckTask = seeMore.getSchedulerHook().runRepeatingTask(() -> {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                seeMore.getSchedulerHook().runEntityTaskAsap(
+                        () -> refreshCachedState(player),
+                        () -> removePlayer(player),
+                        player
+                );
+            }
+        }, ticks, ticks);
+    }
+
+    private static void cancelAndRemove(Map<UUID, ScheduledTask> tasks, UUID playerId) {
+        ScheduledTask task = tasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
     }
 
 }

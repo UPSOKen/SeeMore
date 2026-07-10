@@ -2,7 +2,8 @@
 [Hangar](https://hangar.papermc.io/froobynooby/SeeMore) | [Modrinth](https://modrinth.com/plugin/seemore) | [Dev Builds](https://ci.froobworld.com/job/SeeMore/)
 
 ## About
-SeeMore is a simple Paper plugin that sets a player's server-side view distance according to their client-side render distance.
+SeeMore is a Paper 26.1.2 plugin that sets each player's server-side view distance from their client settings,
+ordered permission profiles, and AFK state. It remains compatible with Folia's scheduler model.
 
 ## Configuration
 
@@ -10,7 +11,7 @@ SeeMore is a simple Paper plugin that sets a player's server-side view distance 
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 2
+version: 3
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -27,7 +28,49 @@ world-settings:
     # The maximum view distance a player in this world can have.
     # Set to -1 to use the server's configured view distance for this world.
     maximum-view-distance: -1
+
+# Permission profiles are checked from top to bottom. The first matching permission wins.
+permissions:
+  # Set to disabled to check only when another event recalculates view distance.
+  check-interval: 30s
+  groups:
+    - name: admin
+      permission: seemore.view-distance.admin
+      world-settings:
+        default:
+          maximum-view-distance: -1
+        world_nether:
+          maximum-view-distance: 10
+
+    - name: donor
+      permission: seemore.view-distance.donor
+      world-settings:
+        default:
+          maximum-view-distance: 18
+        world_nether:
+          maximum-view-distance: 10
+
+# Passive position changes, such as water in an AFK pool, are not activity.
+afk:
+  enabled: true
+  check-interval: 10s
+  timeout: 10m
+  maximum-view-distance: 8
+  wake-up:
+    minimum-look-change: 2.0
+    required-look-events: 2
+    look-event-window: 2s
 ```
+
+The existing `world-settings` section remains the fallback for players without a matching permission. Each profile
+must contain its own `default` world entry. View distance never drops below the player's effective simulation
+distance, and SeeMore does not change simulation distance itself.
+
+### Configuration migration
+
+On first startup, version 1 and version 2 configurations are automatically migrated to version 3. Existing
+`update-delay`, `log-changes`, and `world-settings` values remain in place. The plugin creates a backup named
+`config.yml.v1.bak` or `config.yml.v2.bak` before changing the file, then appends the new permission and AFK defaults.
 
 ## Commands
 
@@ -38,19 +81,13 @@ world-settings:
 | `/seemore players` | `seemore.command.players` | Show the server-side view distance of all players.      |
 
 ## Building
-If you would like to build the plugin yourself you can follow these steps.
+Building requires Java 25.
 
-1\. Install dependency NabConfiguration to maven local
-```bash
-git clone https://github.com/froobynooby/nab-configuration
-cd nab-configuration
-./gradlew clean install
-```
-2\. Clone SeeMore and build
+1\. Clone SeeMore and build
 ```bash
 git clone https://github.com/froobynooby/SeeMore
 cd SeeMore
 ./gradlew clean build
 ```
 
-3\. Find jar in `SeeMore/build/libs`
+2\. Find the shaded jar in `SeeMore/build/libs`.

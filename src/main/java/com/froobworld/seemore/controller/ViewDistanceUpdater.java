@@ -33,6 +33,7 @@ public class ViewDistanceUpdater implements Listener {
     @EventHandler
     private void onQuit(PlayerQuitEvent event) {
         seenBefore.remove(event.getPlayer().getUniqueId());
+        controller.removePlayer(event.getPlayer());
     }
 
     @EventHandler

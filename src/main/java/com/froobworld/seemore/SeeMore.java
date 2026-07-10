@@ -1,5 +1,6 @@
 package com.froobworld.seemore;
 
+import com.froobworld.seemore.afk.AfkTracker;
 import com.froobworld.seemore.command.SeeMoreCommand;
 import com.froobworld.seemore.config.SeeMoreConfig;
 import com.froobworld.seemore.controller.ViewDistanceController;
@@ -15,6 +16,7 @@ public class SeeMore extends JavaPlugin {
     private SeeMoreConfig config;
     private SchedulerHook schedulerHook;
     private ViewDistanceController viewDistanceController;
+    private AfkTracker afkTracker;
 
     @Override
     public void onEnable() {
@@ -34,6 +36,7 @@ public class SeeMore extends JavaPlugin {
         }
 
         viewDistanceController = new ViewDistanceController(this);
+        afkTracker = new AfkTracker(this, viewDistanceController);
 
         registerCommand();
 
@@ -57,10 +60,11 @@ public class SeeMore extends JavaPlugin {
 
     public void reload() throws Exception {
         config.load();
+        if (afkTracker != null) {
+            afkTracker.reloadConfiguration();
+        }
         if (viewDistanceController != null) {
-
-            // Update the target view distance of all players in case the configured maximum has changed
-            viewDistanceController.updateAllPlayers();
+            viewDistanceController.reloadConfiguration();
         }
     }
 

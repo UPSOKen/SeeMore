@@ -1,39 +1,230 @@
 package com.froobworld.seemore.config;
 
-import com.froobworld.nabconfiguration.*;
-import com.froobworld.nabconfiguration.annotations.Entry;
-import com.froobworld.nabconfiguration.annotations.SectionMap;
 import com.froobworld.seemore.SeeMore;
 import org.bukkit.World;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
-public class SeeMoreConfig extends NabConfiguration {
-    private static final int VERSION = 2;
+public final class SeeMoreConfig {
+    private final SeeMore seeMore;
+    private final File configFile;
+    private volatile Snapshot snapshot;
 
     public SeeMoreConfig(SeeMore seeMore) {
-        super(
-                new File(seeMore.getDataFolder(), "config.yml"),
-                () -> seeMore.getResource("config.yml"),
-                i -> seeMore.getResource("config-patches/" + i + ".patch"),
-                VERSION
-        );
+        this.seeMore = seeMore;
+        this.configFile = new File(seeMore.getDataFolder(), "config.yml");
     }
 
-    @Entry(key = "update-delay")
-    public final ConfigEntry<Integer> updateDelay = ConfigEntries.integerEntry();
+    public void load() throws Exception {
+        copyDefaultConfigIfMissing();
+        ConfigMigrator.migrate(configFile.toPath());
 
-    @Entry(key = "log-changes")
-    public final ConfigEntry<Boolean> logChanges = new ConfigEntry<>();
-
-    @SectionMap(key = "world-settings", defaultKey = "default")
-    public final ConfigSectionMap<World, WorldSettings> worldSettings = new ConfigSectionMap<>(World::getName, WorldSettings.class, true);
-
-    public static class WorldSettings extends ConfigSection {
-
-        @Entry(key = "maximum-view-distance")
-        public final ConfigEntry<Integer> maximumViewDistance = ConfigEntries.integerEntry();
-
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.load(configFile);
+        Snapshot loaded = parseSnapshot(yaml);
+        snapshot = loaded;
     }
 
+    public int updateDelayTicks() {
+        return requireSnapshot().updateDelayTicks();
+    }
+
+    public boolean logChanges() {
+        return requireSnapshot().logChanges();
+    }
+
+    public int maximumViewDistance(World world) {
+        Snapshot current = requireSnapshot();
+        return current.defaultWorldSettings().maximumViewDistance(world.getName());
+    }
+
+    public ResolvedProfile resolveProfile(org.bukkit.entity.Player player) {
+        Snapshot current = requireSnapshot();
+        return PermissionProfileResolver.resolve(current.permissionProfiles(), player::hasPermission,
+                current.defaultWorldSettings(), player.getWorld().getName());
+    }
+
+    public Duration permissionCheckInterval() {
+        return requireSnapshot().permissionCheckInterval();
+    }
+
+    public AfkSettings afkSettings() {
+        return requireSnapshot().afkSettings();
+    }
+
+    static Snapshot parseSnapshot(YamlConfiguration yaml) {
+        int version = yaml.getInt("version", -1);
+        if (version != ConfigMigrator.CURRENT_VERSION) {
+            throw new IllegalArgumentException("Unsupported config version " + version + ".");
+        }
+
+        int updateDelay = yaml.getInt("update-delay", 600);
+        if (updateDelay < 0) {
+            throw new IllegalArgumentException("update-delay must not be negative.");
+        }
+
+        ConfigurationSection worldSection = yaml.getConfigurationSection("world-settings");
+        if (worldSection == null) {
+            throw new IllegalArgumentException("Missing world-settings section.");
+        }
+
+        WorldSettings defaultWorldSettings = parseWorldSettings(worldSection, "world-settings");
+        List<DistanceProfile> permissionProfiles = parsePermissionProfiles(yaml.getList("permissions.groups", List.of()));
+
+        String permissionIntervalValue = yaml.getString("permissions.check-interval", "30s");
+        Duration permissionCheckInterval = isDisabled(permissionIntervalValue)
+                ? null
+                : DurationParser.parse(permissionIntervalValue, "permissions.check-interval");
+        requireMinimumInterval(permissionCheckInterval, "permissions.check-interval");
+
+        int afkMaximum = yaml.getInt("afk.maximum-view-distance", 8);
+        validateDistance("afk.maximum-view-distance", afkMaximum);
+        if (afkMaximum < 0) {
+            throw new IllegalArgumentException("afk.maximum-view-distance must be between 2 and 32.");
+        }
+        Duration afkCheckInterval = DurationParser.parse(yaml.getString("afk.check-interval", "10s"), "afk.check-interval");
+        requireMinimumInterval(afkCheckInterval, "afk.check-interval");
+        Duration afkTimeout = DurationParser.parse(yaml.getString("afk.timeout", "10m"), "afk.timeout");
+        double minimumLookChange = yaml.getDouble("afk.wake-up.minimum-look-change", 2.0);
+        int requiredLookEvents = yaml.getInt("afk.wake-up.required-look-events", 2);
+        Duration lookEventWindow = DurationParser.parse(
+                yaml.getString("afk.wake-up.look-event-window", "2s"), "afk.wake-up.look-event-window");
+        if (minimumLookChange <= 0) {
+            throw new IllegalArgumentException("afk.wake-up.minimum-look-change must be greater than zero.");
+        }
+        if (requiredLookEvents < 1) {
+            throw new IllegalArgumentException("afk.wake-up.required-look-events must be at least 1.");
+        }
+
+        AfkSettings afkSettings = new AfkSettings(yaml.getBoolean("afk.enabled", true), afkCheckInterval,
+                afkTimeout, afkMaximum, minimumLookChange, requiredLookEvents, lookEventWindow);
+        return new Snapshot(updateDelay, yaml.getBoolean("log-changes", true), defaultWorldSettings,
+                List.copyOf(permissionProfiles), permissionCheckInterval, afkSettings);
+    }
+
+    private static List<DistanceProfile> parsePermissionProfiles(List<?> rawProfiles) {
+        List<DistanceProfile> profiles = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        for (int index = 0; index < rawProfiles.size(); index++) {
+            Object rawProfile = rawProfiles.get(index);
+            if (!(rawProfile instanceof Map<?, ?> profileMap)) {
+                throw new IllegalArgumentException("permissions.groups[" + index + "] must be a section.");
+            }
+            String path = "permissions.groups[" + index + "]";
+            String name = requiredString(profileMap, "name", path);
+            String permission = requiredString(profileMap, "permission", path);
+            if (!names.add(normalize(name))) {
+                throw new IllegalArgumentException("Duplicate permission profile name: " + name);
+            }
+            Object rawWorldSettings = profileMap.get("world-settings");
+            if (!(rawWorldSettings instanceof Map<?, ?> worldSettingsMap)) {
+                throw new IllegalArgumentException(path + ".world-settings is required.");
+            }
+            profiles.add(new DistanceProfile(name, permission, parseWorldSettings(worldSettingsMap, path + ".world-settings")));
+        }
+        return profiles;
+    }
+
+    private static WorldSettings parseWorldSettings(ConfigurationSection section, String path) {
+        Map<String, Integer> maximums = new LinkedHashMap<>();
+        for (String worldName : section.getKeys(false)) {
+            int maximum = section.getInt(worldName + ".maximum-view-distance", Integer.MIN_VALUE);
+            validateDistance(path + "." + worldName + ".maximum-view-distance", maximum);
+            maximums.put(normalize(worldName), maximum);
+        }
+        return createWorldSettings(maximums, path);
+    }
+
+    private static WorldSettings parseWorldSettings(Map<?, ?> section, String path) {
+        Map<String, Integer> maximums = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : section.entrySet()) {
+            String worldName = String.valueOf(entry.getKey());
+            if (!(entry.getValue() instanceof Map<?, ?> values)) {
+                throw new IllegalArgumentException(path + "." + worldName + " must be a section.");
+            }
+            Object rawMaximum = values.get("maximum-view-distance");
+            if (!(rawMaximum instanceof Number number)) {
+                throw new IllegalArgumentException(path + "." + worldName + ".maximum-view-distance is required.");
+            }
+            int maximum = number.intValue();
+            validateDistance(path + "." + worldName + ".maximum-view-distance", maximum);
+            maximums.put(normalize(worldName), maximum);
+        }
+        return createWorldSettings(maximums, path);
+    }
+
+    private static WorldSettings createWorldSettings(Map<String, Integer> maximums, String path) {
+        Integer defaultMaximum = maximums.remove("default");
+        if (defaultMaximum == null) {
+            throw new IllegalArgumentException(path + ".default.maximum-view-distance is required.");
+        }
+        return new WorldSettings(defaultMaximum, maximums);
+    }
+
+    private static String requiredString(Map<?, ?> values, String key, String path) {
+        Object rawValue = values.get(key);
+        if (!(rawValue instanceof String value) || value.isBlank()) {
+            throw new IllegalArgumentException(path + "." + key + " is required.");
+        }
+        return value;
+    }
+
+    private static boolean isDisabled(String value) {
+        return value != null && (value.equalsIgnoreCase("disabled") || value.equalsIgnoreCase("off"));
+    }
+
+    private static void requireMinimumInterval(Duration interval, String path) {
+        if (interval != null && interval.compareTo(Duration.ofSeconds(1)) < 0) {
+            throw new IllegalArgumentException(path + " must be at least 1s.");
+        }
+    }
+
+    static void validateDistance(String path, int distance) {
+        if (distance != -1 && (distance < 2 || distance > 32)) {
+            throw new IllegalArgumentException(path + " must be -1 or between 2 and 32.");
+        }
+    }
+
+    static String normalize(String value) {
+        return value.toLowerCase(Locale.ROOT);
+    }
+
+    private Snapshot requireSnapshot() {
+        Snapshot current = snapshot;
+        if (current == null) {
+            throw new IllegalStateException("Configuration has not been loaded.");
+        }
+        return current;
+    }
+
+    private void copyDefaultConfigIfMissing() throws IOException {
+        if (configFile.exists()) {
+            return;
+        }
+        Files.createDirectories(configFile.toPath().getParent());
+        try (InputStream input = seeMore.getResource("config.yml")) {
+            if (input == null) {
+                throw new IOException("The bundled config.yml resource is missing.");
+            }
+            Files.copy(input, configFile.toPath());
+        }
+    }
+
+    record Snapshot(int updateDelayTicks, boolean logChanges, WorldSettings defaultWorldSettings,
+                    List<DistanceProfile> permissionProfiles, Duration permissionCheckInterval,
+                    AfkSettings afkSettings) {
+    }
 }

@@ -1,41 +1,58 @@
 plugins {
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.gradleup.shadow' version '9.5.1'
     id 'java'
 }
 
-group 'com.froobworld'
-version '1.0.2'
-jar.enabled = false;
+group = 'com.froobworld'
+version = '2.0.0'
+jar.enabled = false
 
 repositories {
     mavenCentral()
-    mavenLocal()
     maven {
-        url "https://repo.papermc.io/repository/maven-public/"
+        url = uri('https://repo.papermc.io/repository/maven-public/')
     }
 }
 
 dependencies {
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
-    compileOnly 'dev.folia:folia-api:1.19.4-R0.1-SNAPSHOT'
-    implementation 'com.froobworld:nab-configuration:1.0.2'
+    compileOnly 'io.papermc.paper:paper-api:26.1.2.build.+'
     implementation 'org.bstats:bstats-base:3.0.1'
+
+    testImplementation 'io.papermc.paper:paper-api:26.1.2.build.+'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+def pluginVersion = version.toString()
 processResources {
-    filter { String line -> line.replace('${version}', project.version.toString()) }
+    inputs.property('version', pluginVersion)
+    filesMatching('plugin.yml') {
+        expand(version: pluginVersion)
+    }
 }
 
 shadowJar {
-    archiveFileName = 'SeeMore-' + project.version.toString() + '.jar';
+    archiveFileName = 'SeeMore-' + project.version.toString() + '.jar'
 
-    relocate 'com.froobworld.nabconfiguration', 'com.froobworld.seemore.lib.nabconfiguration'
     relocate 'org.bstats','com.froobworld.seemore.lib.bstats'
 }
 
 artifacts {
-    shadowJar;
+    shadowJar
 }
 
-assemble.dependsOn(shadowJar);
+assemble.dependsOn(shadowJar)
+
+test {
+    useJUnitPlatform()
+}

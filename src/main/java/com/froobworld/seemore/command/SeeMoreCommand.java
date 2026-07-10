@@ -63,7 +63,7 @@ public class SeeMoreCommand implements CommandExecutor, TabCompleter {
                 }
             }
         }
-        sender.sendMessage(text("SeeMore v" + seeMore.getDescription().getVersion(), NamedTextColor.GRAY));
+        sender.sendMessage(text("SeeMore v" + seeMore.getPluginMeta().getVersion(), NamedTextColor.GRAY));
         sender.sendMessage(empty());
         if (sender.hasPermission("seemore.command.reload")) {
             sender.sendMessage(text("/seemore reload"));
