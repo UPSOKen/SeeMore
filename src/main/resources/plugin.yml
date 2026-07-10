@@ -2,7 +2,7 @@ name: SeeMore
 main: com.froobworld.seemore.SeeMore
 version: ${version}
 api-version: '26.1.2'
-authors: [froobynooby]
+authors: [froobynooby, UPSOKen]
 description: Per-player view distance based on client settings, permissions, and activity.
 folia-supported: true
 

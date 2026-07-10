@@ -1,5 +1,14 @@
 # SeeMore
-[Hangar](https://hangar.papermc.io/froobynooby/SeeMore) | [Modrinth](https://modrinth.com/plugin/seemore) | [Dev Builds](https://ci.froobworld.com/job/SeeMore/)
+
+> [!IMPORTANT]
+> This is a community fork of [froobynooby/SeeMore](https://github.com/froobynooby/SeeMore). It targets Paper
+> 26.1.2 and adds ordered permission-based view-distance profiles, input-aware AFK distance reduction, configurable
+> permission/AFK checks, effective simulation-distance flooring, and automatic migration of upstream v1/v2 configs.
+
+Upstream project links (these builds do not include the fork changes):
+[Source](https://github.com/froobynooby/SeeMore) |
+[Hangar](https://hangar.papermc.io/froobynooby/SeeMore) |
+[Modrinth](https://modrinth.com/plugin/seemore)
 
 ## About
 SeeMore is a Paper 26.1.2 plugin that sets each player's server-side view distance from their client settings,
@@ -85,7 +94,7 @@ Building requires Java 25.
 
 1\. Clone SeeMore and build
 ```bash
-git clone https://github.com/froobynooby/SeeMore
+git clone https://github.com/UPSOKen/SeeMore
 cd SeeMore
 ./gradlew clean build
 ```
