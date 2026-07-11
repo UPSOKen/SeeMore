@@ -12,7 +12,7 @@ class SeeMoreConfigParsingTest {
     void parsesOrderedProfilesAndAfkSettings() throws Exception {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.loadFromString("""
-                version: 3
+                version: 4
                 update-delay: 600
                 log-changes: true
                 world-settings:
@@ -22,7 +22,7 @@ class SeeMoreConfigParsingTest {
                     maximum-view-distance: 8
                 permissions:
                   check-interval: 30s
-                  groups:
+                  group-overrides:
                     - name: admin
                       permission: seemore.view-distance.admin
                       world-settings:
@@ -65,10 +65,37 @@ class SeeMoreConfigParsingTest {
         assertNull(snapshot.permissionCheckInterval());
     }
 
+    @Test
+    void permitsAGroupOverrideWithoutADefault() throws Exception {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.loadFromString("""
+                version: 4
+                world-settings:
+                  default:
+                    maximum-view-distance: 14
+                  world_nether:
+                    maximum-view-distance: 12
+                permissions:
+                  check-interval: 30s
+                  group-overrides:
+                    - name: donor
+                      permission: seemore.view-distance.donor
+                      world-settings:
+                        resource_world:
+                          maximum-view-distance: 18
+                """);
+
+        SeeMoreConfig.Snapshot snapshot = assertDoesNotThrow(() -> SeeMoreConfig.parseSnapshot(yaml));
+
+        assertEquals(1, snapshot.permissionProfiles().size());
+        assertEquals(18, snapshot.permissionProfiles().getFirst().worldSettings()
+                .worldMaximums().get("resource_world"));
+    }
+
     private static YamlConfiguration minimumConfig(String permissionInterval) throws Exception {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.loadFromString("""
-                version: 3
+                version: 4
                 update-delay: 600
                 log-changes: true
                 world-settings:
@@ -76,7 +103,7 @@ class SeeMoreConfigParsingTest {
                     maximum-view-distance: -1
                 permissions:
                   check-interval: %s
-                  groups: []
+                  group-overrides: []
                 afk:
                   enabled: true
                   check-interval: 10s

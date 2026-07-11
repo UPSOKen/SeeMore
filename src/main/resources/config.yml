@@ -1,7 +1,7 @@
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 3
+version: 4
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -19,12 +19,13 @@ world-settings:
     # Set to -1 to use the server's configured view distance for this world.
     maximum-view-distance: -1
 
-# Permission profiles are checked from top to bottom. The first matching permission wins.
+# Permission overrides are checked from top to bottom. The first matching permission wins.
 permissions:
   # How often online players are checked for permission changes.
   # Set to disabled to check only when another event recalculates view distance.
   check-interval: 30s
-  groups: []
+  # Exact group world override -> top-level exact world -> group default override -> top-level default.
+  group-overrides: []
 
 # Reduce the view distance of inactive players without treating passive position changes as activity.
 afk:

@@ -82,7 +82,12 @@ public final class SeeMoreConfig {
         }
 
         WorldSettings defaultWorldSettings = parseWorldSettings(worldSection, "world-settings");
-        List<DistanceProfile> permissionProfiles = parsePermissionProfiles(yaml.getList("permissions.groups", List.of()));
+        if (yaml.contains("permissions.groups")) {
+            throw new IllegalArgumentException(
+                    "permissions.groups has been renamed to permissions.group-overrides in config version 4.");
+        }
+        List<DistanceProfile> permissionProfiles = parsePermissionProfiles(
+                yaml.getList("permissions.group-overrides", List.of()));
 
         String permissionIntervalValue = yaml.getString("permissions.check-interval", "30s");
         Duration permissionCheckInterval = isDisabled(permissionIntervalValue)
@@ -121,9 +126,9 @@ public final class SeeMoreConfig {
         for (int index = 0; index < rawProfiles.size(); index++) {
             Object rawProfile = rawProfiles.get(index);
             if (!(rawProfile instanceof Map<?, ?> profileMap)) {
-                throw new IllegalArgumentException("permissions.groups[" + index + "] must be a section.");
+                throw new IllegalArgumentException("permissions.group-overrides[" + index + "] must be a section.");
             }
-            String path = "permissions.groups[" + index + "]";
+            String path = "permissions.group-overrides[" + index + "]";
             String name = requiredString(profileMap, "name", path);
             String permission = requiredString(profileMap, "permission", path);
             if (!names.add(normalize(name))) {
@@ -133,7 +138,8 @@ public final class SeeMoreConfig {
             if (!(rawWorldSettings instanceof Map<?, ?> worldSettingsMap)) {
                 throw new IllegalArgumentException(path + ".world-settings is required.");
             }
-            profiles.add(new DistanceProfile(name, permission, parseWorldSettings(worldSettingsMap, path + ".world-settings")));
+            profiles.add(new DistanceProfile(name, permission,
+                    parseWorldOverrides(worldSettingsMap, path + ".world-settings")));
         }
         return profiles;
     }
@@ -145,10 +151,10 @@ public final class SeeMoreConfig {
             validateDistance(path + "." + worldName + ".maximum-view-distance", maximum);
             maximums.put(normalize(worldName), maximum);
         }
-        return createWorldSettings(maximums, path);
+        return createWorldSettings(maximums, path, true);
     }
 
-    private static WorldSettings parseWorldSettings(Map<?, ?> section, String path) {
+    private static WorldSettings parseWorldOverrides(Map<?, ?> section, String path) {
         Map<String, Integer> maximums = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : section.entrySet()) {
             String worldName = String.valueOf(entry.getKey());
@@ -163,12 +169,13 @@ public final class SeeMoreConfig {
             validateDistance(path + "." + worldName + ".maximum-view-distance", maximum);
             maximums.put(normalize(worldName), maximum);
         }
-        return createWorldSettings(maximums, path);
+        return createWorldSettings(maximums, path, false);
     }
 
-    private static WorldSettings createWorldSettings(Map<String, Integer> maximums, String path) {
+    private static WorldSettings createWorldSettings(Map<String, Integer> maximums, String path,
+                                                     boolean defaultRequired) {
         Integer defaultMaximum = maximums.remove("default");
-        if (defaultMaximum == null) {
+        if (defaultRequired && defaultMaximum == null) {
             throw new IllegalArgumentException(path + ".default.maximum-view-distance is required.");
         }
         return new WorldSettings(defaultMaximum, maximums);

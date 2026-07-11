@@ -2,8 +2,8 @@
 
 > [!IMPORTANT]
 > This is a community fork of [froobynooby/SeeMore](https://github.com/froobynooby/SeeMore). It targets Paper
-> 26.1.2 and adds ordered permission-based view-distance profiles, input-aware AFK distance reduction, configurable
-> permission/AFK checks, effective simulation-distance flooring, and automatic migration of upstream v1/v2 configs.
+> 26.1.2 and adds layered permission-based view-distance overrides, input-aware AFK distance reduction, configurable
+> permission/AFK checks, effective simulation-distance flooring, and automatic migration of v1/v2/v3 configs.
 
 Upstream project links (these builds do not include the fork changes):
 [Source](https://github.com/froobynooby/SeeMore) |
@@ -12,7 +12,7 @@ Upstream project links (these builds do not include the fork changes):
 
 ## About
 SeeMore is a Paper 26.1.2 plugin that sets each player's server-side view distance from their client settings,
-ordered permission profiles, and AFK state. It remains compatible with Folia's scheduler model.
+ordered permission overrides, and AFK state. It remains compatible with Folia's scheduler model.
 
 ## Configuration
 
@@ -20,7 +20,7 @@ ordered permission profiles, and AFK state. It remains compatible with Folia's s
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 3
+version: 4
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -38,11 +38,16 @@ world-settings:
     # Set to -1 to use the server's configured view distance for this world.
     maximum-view-distance: -1
 
-# Permission profiles are checked from top to bottom. The first matching permission wins.
+# Permission overrides are checked from top to bottom. The first matching permission wins.
 permissions:
   # Set to disabled to check only when another event recalculates view distance.
   check-interval: 30s
-  groups:
+  # Resolution order for the matching group:
+  # 1. Exact group world override
+  # 2. Exact top-level world setting
+  # 3. Group default override
+  # 4. Top-level default
+  group-overrides:
     - name: admin
       permission: seemore.view-distance.admin
       world-settings:
@@ -71,15 +76,24 @@ afk:
     look-event-window: 2s
 ```
 
-The existing `world-settings` section remains the fallback for players without a matching permission. Each profile
-must contain its own `default` world entry. View distance never drops below the player's effective simulation
-distance, and SeeMore does not change simulation distance itself.
+The top-level `world-settings` section is the baseline for every player. For the first matching permission group,
+an exact group world entry overrides the matching top-level world entry. If the group does not define that world,
+the top-level exact world entry remains in effect. For worlds not named in either place, an optional group `default`
+overrides the top-level `default`. A group may omit `default` entirely and define only the worlds it needs to change.
+
+Groups are still checked from top to bottom, and only the first matching group is used. View distance never drops
+below the player's effective simulation distance, and SeeMore does not change simulation distance itself.
 
 ### Configuration migration
 
-On first startup, version 1 and version 2 configurations are automatically migrated to version 3. Existing
-`update-delay`, `log-changes`, and `world-settings` values remain in place. The plugin creates a backup named
-`config.yml.v1.bak` or `config.yml.v2.bak` before changing the file, then appends the new permission and AFK defaults.
+On first startup, version 1, version 2, and version 3 configurations are automatically migrated to version 4.
+Existing `update-delay`, `log-changes`, `world-settings`, permission entries, and AFK values remain in place. The
+plugin creates a versioned backup such as `config.yml.v3.bak` before changing the file. Version 3's
+`permissions.groups` key is automatically renamed to `permissions.group-overrides`.
+
+Version 4 intentionally changes how a group's `default` interacts with explicitly named top-level worlds. A named
+top-level world now remains in effect unless the matching group explicitly overrides that world. Review permission
+groups after upgrading if they previously relied on a group `default` replacing every top-level world entry.
 
 ## Commands
 

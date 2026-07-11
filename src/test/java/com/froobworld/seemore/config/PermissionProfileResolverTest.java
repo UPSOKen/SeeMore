@@ -40,6 +40,51 @@ class PermissionProfileResolverTest {
     }
 
     @Test
+    void usesTheGlobalWorldSettingBeforeTheSelectedGroupsDefaultOverride() {
+        DistanceProfile override = new DistanceProfile(
+                "admin", "seemore.view-distance.admin", new WorldSettings(20, Map.of())
+        );
+
+        ResolvedProfile resolved = PermissionProfileResolver.resolve(
+                List.of(override), "seemore.view-distance.admin"::equals, defaults, "world_nether"
+        );
+        ResolvedProfile newWorld = PermissionProfileResolver.resolve(
+                List.of(override), "seemore.view-distance.admin"::equals, defaults, "new_world"
+        );
+
+        assertEquals("admin", resolved.name());
+        assertEquals(8, resolved.maximumViewDistance());
+        assertEquals(20, newWorld.maximumViewDistance());
+    }
+
+    @Test
+    void usesTheSelectedGroupsExactWorldOverrideBeforeTheGlobalWorldSetting() {
+        ResolvedProfile resolved = PermissionProfileResolver.resolve(
+                List.of(admin), "seemore.view-distance.admin"::equals, defaults, "world_nether"
+        );
+
+        assertEquals("admin", resolved.name());
+        assertEquals(10, resolved.maximumViewDistance());
+    }
+
+    @Test
+    void usesGlobalSettingsWhenTheSelectedGroupHasNoApplicableOverride() {
+        DistanceProfile override = new DistanceProfile(
+                "donor", "seemore.view-distance.donor", new WorldSettings(null, Map.of())
+        );
+
+        ResolvedProfile namedWorld = PermissionProfileResolver.resolve(
+                List.of(override), "seemore.view-distance.donor"::equals, defaults, "world_nether"
+        );
+        ResolvedProfile unlistedWorld = PermissionProfileResolver.resolve(
+                List.of(override), "seemore.view-distance.donor"::equals, defaults, "new_world"
+        );
+
+        assertEquals(8, namedWorld.maximumViewDistance());
+        assertEquals(12, unlistedWorld.maximumViewDistance());
+    }
+
+    @Test
     void usesGlobalDefaultsWhenNoProfileMatches() {
         ResolvedProfile resolved = PermissionProfileResolver.resolve(
                 List.of(admin, donor), permission -> false, defaults, "world_nether"

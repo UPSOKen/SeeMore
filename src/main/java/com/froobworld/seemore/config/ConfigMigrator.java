@@ -11,8 +11,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class ConfigMigrator {
-    public static final int CURRENT_VERSION = 3;
+    public static final int CURRENT_VERSION = 4;
     private static final Pattern VERSION_LINE = Pattern.compile("(?m)^([ \\t]*version[ \\t]*:[ \\t]*)\\d+([ \\t]*(?:#.*)?)$");
+    private static final Pattern CONFIG_LINE = Pattern.compile("(?m)^([ \\t]*)([^\\r\\n]*)$");
+    private static final Pattern PERMISSIONS_HEADER = Pattern.compile("permissions[ \\t]*:[ \\t]*(?:#.*)?");
+    private static final Pattern GROUPS_KEY = Pattern.compile("groups([ \\t]*:.*)");
 
     private ConfigMigrator() {
     }
@@ -34,6 +37,9 @@ public final class ConfigMigrator {
 
         String lineSeparator = original.contains("\r\n") ? "\r\n" : "\n";
         String migrated = replaceVersion(original);
+        if (existing.contains("permissions.groups")) {
+            migrated = renamePermissionGroups(migrated);
+        }
         StringBuilder additions = new StringBuilder();
         if (version == 1 && !existing.contains("log-changes")) {
             additions.append(lineSeparator)
@@ -74,6 +80,49 @@ public final class ConfigMigrator {
         return matcher.replaceFirst("$1" + CURRENT_VERSION + "$2");
     }
 
+    private static String renamePermissionGroups(String config) {
+        Matcher lines = CONFIG_LINE.matcher(config);
+        boolean inPermissions = false;
+        int permissionsIndent = -1;
+        int candidateIndent = Integer.MAX_VALUE;
+        int candidateStart = -1;
+        int candidateEnd = -1;
+        String candidateSuffix = null;
+        while (lines.find()) {
+            String content = lines.group(2);
+            if (content.isBlank() || content.stripLeading().startsWith("#")) {
+                continue;
+            }
+
+            int indentation = lines.group(1).length();
+            if (!inPermissions) {
+                if (PERMISSIONS_HEADER.matcher(content).matches()) {
+                    inPermissions = true;
+                    permissionsIndent = indentation;
+                }
+                continue;
+            }
+
+            if (indentation <= permissionsIndent) {
+                break;
+            }
+
+            Matcher groupsKey = GROUPS_KEY.matcher(content);
+            if (groupsKey.matches() && indentation < candidateIndent) {
+                candidateIndent = indentation;
+                candidateStart = lines.start(2);
+                candidateEnd = lines.end(2);
+                candidateSuffix = groupsKey.group(1);
+            }
+        }
+        if (candidateStart < 0) {
+            throw new IllegalArgumentException("Could not find permissions.groups in the legacy config.");
+        }
+        return config.substring(0, candidateStart)
+                + "group-overrides" + candidateSuffix
+                + config.substring(candidateEnd);
+    }
+
     private static Path nextBackupPath(Path configFile, int version) {
         Path candidate = configFile.resolveSibling(configFile.getFileName() + ".v" + version + ".bak");
         int suffix = 1;
@@ -96,7 +145,7 @@ public final class ConfigMigrator {
             permissions:
               # Set to disabled to check only when another event recalculates view distance.
               check-interval: 30s
-              groups: []
+              group-overrides: []
             """;
 
     private static final String AFK_DEFAULTS = """
