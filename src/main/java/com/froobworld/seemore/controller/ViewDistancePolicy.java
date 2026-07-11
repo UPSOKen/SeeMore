@@ -8,11 +8,14 @@ public final class ViewDistancePolicy {
     }
 
     public static Result calculate(int clientViewDistance, int configuredMaximum, int worldViewDistance,
-                                   int simulationDistance, boolean afk, int afkMaximum) {
+                                   int simulationDistance, boolean afk, int afkMaximum,
+                                   boolean underground, int undergroundMaximum) {
         int ceiling = configuredMaximum < 0 ? worldViewDistance : configuredMaximum;
         ceiling = Math.min(ceiling, MAXIMUM_PAPER_DISTANCE);
         if (afk) {
             ceiling = Math.min(ceiling, afkMaximum);
+        } else if (underground) {
+            ceiling = Math.min(ceiling, undergroundMaximum);
         }
 
         int requestedDistance = Math.min(ceiling, clientViewDistance);

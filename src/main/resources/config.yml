@@ -1,7 +1,7 @@
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 4
+version: 5
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -39,3 +39,24 @@ afk:
     minimum-look-change: 2.0
     required-look-events: 2
     look-event-window: 2s
+
+# Reduce the view distance of active players who remain below the local surface.
+# AFK mode takes precedence over underground mode.
+underground:
+  enabled: false
+  # Allow seemore.underground.bypass to exempt individual players.
+  # Permission grants are ignored while this is false.
+  enable-bypass-permission: false
+  # Whether the worlds below are the only included worlds or the excluded worlds.
+  world-list-mode: whitelist
+  worlds:
+    - world
+  # Detection uses one cached heightmap lookup per eligible active player each interval.
+  check-interval: 5s
+  enter-after: 2m
+  exit-after: 5s
+  # Required distance between the player's eye and the local surface.
+  minimum-depth: 10
+  # Once underground, the player must get this close to the surface before the exit timer begins.
+  exit-depth: 5
+  maximum-view-distance: 8

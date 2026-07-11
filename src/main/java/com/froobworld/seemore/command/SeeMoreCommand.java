@@ -22,12 +22,16 @@ public class SeeMoreCommand implements CommandExecutor, TabCompleter {
     private final AverageCommand averageCommand;
     private final ReloadCommand reloadCommand;
     private final PlayersCommand playersCommand;
+    private final InfoCommand infoCommand;
+    private final StatusCommand statusCommand;
 
     public SeeMoreCommand(SeeMore seeMore) {
         this.seeMore = seeMore;
         this.averageCommand = new AverageCommand(seeMore);
         this.reloadCommand = new ReloadCommand(seeMore);
         this.playersCommand = new PlayersCommand(seeMore);
+        this.infoCommand = new InfoCommand(seeMore);
+        this.statusCommand = new StatusCommand(seeMore);
     }
 
     @Override
@@ -62,6 +66,22 @@ public class SeeMoreCommand implements CommandExecutor, TabCompleter {
                     return false;
                 }
             }
+            if (args[0].equalsIgnoreCase("info")) {
+                if (sender.hasPermission("seemore.command.info")) {
+                    return infoCommand.onCommand(sender, command, label, args);
+                } else {
+                    sender.sendMessage(NO_PERMISSION);
+                    return false;
+                }
+            }
+            if (args[0].equalsIgnoreCase("status")) {
+                if (sender.hasPermission("seemore.command.status")) {
+                    return statusCommand.onCommand(sender, command, label, args);
+                } else {
+                    sender.sendMessage(NO_PERMISSION);
+                    return false;
+                }
+            }
         }
         sender.sendMessage(text("SeeMore v" + seeMore.getPluginMeta().getVersion(), NamedTextColor.GRAY));
         sender.sendMessage(empty());
@@ -73,6 +93,12 @@ public class SeeMoreCommand implements CommandExecutor, TabCompleter {
         }
         if (sender.hasPermission("seemore.command.players")) {
             sender.sendMessage(text("/seemore players"));
+        }
+        if (sender.hasPermission("seemore.command.info")) {
+            sender.sendMessage(text("/seemore info [world]"));
+        }
+        if (sender.hasPermission("seemore.command.status")) {
+            sender.sendMessage(text("/seemore status [player]"));
         }
         return true;
     }
@@ -90,6 +116,16 @@ public class SeeMoreCommand implements CommandExecutor, TabCompleter {
             if (sender.hasPermission("seemore.command.players")) {
                 suggestions.add("players");
             }
+            if (sender.hasPermission("seemore.command.info")) {
+                suggestions.add("info");
+            }
+            if (sender.hasPermission("seemore.command.status")) {
+                suggestions.add("status");
+            }
+        } else if (args[0].equalsIgnoreCase("info")) {
+            return infoCommand.onTabComplete(sender, command, label, args);
+        } else if (args[0].equalsIgnoreCase("status")) {
+            return statusCommand.onTabComplete(sender, command, label, args);
         }
 
         return StringUtil.copyPartialMatches(args[args.length - 1], suggestions, new ArrayList<>());

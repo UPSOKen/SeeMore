@@ -93,4 +93,18 @@ class PermissionProfileResolverTest {
         assertEquals("default", resolved.name());
         assertEquals(8, resolved.maximumViewDistance());
     }
+
+    @Test
+    void reportsTheSourceOfEveryResolvedProfileDistance() {
+        assertEquals(new ResolvedDistance(10, DistanceResolutionSource.GROUP_WORLD_OVERRIDE),
+                PermissionProfileResolver.resolveDistance(admin, defaults, "world_nether"));
+        assertEquals(new ResolvedDistance(8, DistanceResolutionSource.WORLD_SETTING),
+                PermissionProfileResolver.resolveDistance(
+                        new DistanceProfile("plain", "plain", new WorldSettings(20, Map.of())),
+                        defaults, "world_nether"));
+        assertEquals(new ResolvedDistance(18, DistanceResolutionSource.GROUP_DEFAULT_OVERRIDE),
+                PermissionProfileResolver.resolveDistance(donor, defaults, "unlisted_world"));
+        assertEquals(new ResolvedDistance(12, DistanceResolutionSource.DEFAULT_SETTING),
+                PermissionProfileResolver.resolveDefaultDistance(defaults, "unlisted_world"));
+    }
 }

@@ -8,6 +8,7 @@ import com.froobworld.seemore.metrics.SeeMoreMetrics;
 import com.froobworld.seemore.scheduler.BukkitSchedulerHook;
 import com.froobworld.seemore.scheduler.RegionisedSchedulerHook;
 import com.froobworld.seemore.scheduler.SchedulerHook;
+import com.froobworld.seemore.underground.UndergroundTracker;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -17,6 +18,7 @@ public class SeeMore extends JavaPlugin {
     private SchedulerHook schedulerHook;
     private ViewDistanceController viewDistanceController;
     private AfkTracker afkTracker;
+    private UndergroundTracker undergroundTracker;
 
     @Override
     public void onEnable() {
@@ -36,7 +38,8 @@ public class SeeMore extends JavaPlugin {
         }
 
         viewDistanceController = new ViewDistanceController(this);
-        afkTracker = new AfkTracker(this, viewDistanceController);
+        undergroundTracker = new UndergroundTracker(this, viewDistanceController);
+        afkTracker = new AfkTracker(this, viewDistanceController, undergroundTracker);
 
         registerCommand();
 
@@ -60,6 +63,9 @@ public class SeeMore extends JavaPlugin {
 
     public void reload() throws Exception {
         config.load();
+        if (undergroundTracker != null) {
+            undergroundTracker.reloadConfiguration();
+        }
         if (afkTracker != null) {
             afkTracker.reloadConfiguration();
         }
@@ -74,5 +80,9 @@ public class SeeMore extends JavaPlugin {
 
     public SchedulerHook getSchedulerHook() {
         return schedulerHook;
+    }
+
+    public ViewDistanceController getViewDistanceController() {
+        return viewDistanceController;
     }
 }

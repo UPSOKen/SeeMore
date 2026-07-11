@@ -3,7 +3,7 @@ main: com.froobworld.seemore.SeeMore
 version: ${version}
 api-version: '26.1.2'
 authors: [froobynooby, UPSOKen]
-description: Per-player view distance based on client settings, permissions, and activity.
+description: Per-player view distance based on client settings, permissions, activity, and underground state.
 folia-supported: true
 
 commands:
@@ -11,6 +11,10 @@ commands:
     description: The base command for SeeMore.
 
 permissions:
+  seemore.underground.bypass:
+    description: Exempts a player from underground view-distance reduction.
+    default: false
+
   seemore.command.*:
     description: Access to all SeeMore subcommands.
     default: op
@@ -19,6 +23,9 @@ permissions:
       - seemore.command.reload
       - seemore.command.average
       - seemore.command.players
+      - seemore.command.info
+      - seemore.command.status
+      - seemore.command.status.others
 
   seemore.command.seemore:
     description: Access to the /seemore command.
@@ -41,3 +48,21 @@ permissions:
     default: op
     children:
       - seemore.command.seemore
+
+  seemore.command.info:
+    description: Access to the /seemore info command.
+    default: op
+    children:
+      - seemore.command.seemore
+
+  seemore.command.status:
+    description: Access to the /seemore status command for yourself.
+    default: op
+    children:
+      - seemore.command.seemore
+
+  seemore.command.status.others:
+    description: Access to /seemore status for other players.
+    default: op
+    children:
+      - seemore.command.status

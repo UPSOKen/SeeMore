@@ -3,6 +3,7 @@ package com.froobworld.seemore.controller;
 import com.froobworld.seemore.SeeMore;
 import com.froobworld.seemore.config.DurationParser;
 import com.froobworld.seemore.config.ResolvedProfile;
+import com.froobworld.seemore.config.UndergroundSettings;
 import com.froobworld.seemore.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -24,8 +25,10 @@ public class ViewDistanceController {
     private final Map<UUID, ScheduledTask> viewDistanceUpdateTasks = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledTask> sendDistanceUpdateTasks = new ConcurrentHashMap<>();
     private final Map<UUID, String> selectedProfileNames = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> selectedProfileMaximums = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> simulationDistances = new ConcurrentHashMap<>();
     private final Set<UUID> afkPlayers = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> undergroundPlayers = ConcurrentHashMap.newKeySet();
     private final ViewDistanceUpdateLogger viewDistanceUpdateLogger;
     private ScheduledTask permissionCheckTask;
 
@@ -55,10 +58,13 @@ public class ViewDistanceController {
                 player.getWorld().getViewDistance(),
                 simulationDistance,
                 afkPlayers.contains(playerId),
-                seeMore.getSeeMoreConfig().afkSettings().maximumViewDistance()
+                seeMore.getSeeMoreConfig().afkSettings().maximumViewDistance(),
+                undergroundPlayers.contains(playerId),
+                seeMore.getSeeMoreConfig().undergroundSettings().maximumViewDistance()
         );
 
         selectedProfileNames.put(playerId, profile.name());
+        selectedProfileMaximums.put(playerId, profile.maximumViewDistance());
         simulationDistances.put(playerId, simulationDistance);
         targetViewDistanceMap.put(playerId, result.viewDistance());
         targetSendDistanceMap.put(playerId, result.sendDistance());
@@ -86,6 +92,48 @@ public class ViewDistanceController {
         return afkPlayers.contains(player.getUniqueId());
     }
 
+    public void setUnderground(Player player, boolean underground) {
+        boolean changed = underground
+                ? undergroundPlayers.add(player.getUniqueId())
+                : undergroundPlayers.remove(player.getUniqueId());
+        if (changed) {
+            setTargetViewDistance(player, player.getClientViewDistance(), false, false);
+        }
+    }
+
+    public boolean isUnderground(Player player) {
+        return undergroundPlayers.contains(player.getUniqueId());
+    }
+
+    public PlayerDistanceStatus captureStatus(Player player) {
+        UUID playerId = player.getUniqueId();
+        ResolvedProfile currentProfile = seeMore.getSeeMoreConfig().resolveProfile(player);
+        String selectedProfileName = selectedProfileNames.getOrDefault(playerId, currentProfile.name());
+        int selectedProfileMaximum = selectedProfileMaximums.getOrDefault(
+                playerId, currentProfile.maximumViewDistance());
+        int worldViewDistance = player.getWorld().getViewDistance();
+        int simulationDistance = player.getSimulationDistance();
+        boolean afk = afkPlayers.contains(playerId);
+        boolean underground = undergroundPlayers.contains(playerId);
+        int afkMaximum = seeMore.getSeeMoreConfig().afkSettings().maximumViewDistance();
+        UndergroundSettings undergroundSettings = seeMore.getSeeMoreConfig().undergroundSettings();
+        int undergroundMaximum = undergroundSettings.maximumViewDistance();
+        ViewDistancePolicy.Result calculated = ViewDistancePolicy.calculate(
+                player.getClientViewDistance(), selectedProfileMaximum, worldViewDistance,
+                simulationDistance, afk, afkMaximum, underground, undergroundMaximum);
+        DistanceMode mode = afk ? DistanceMode.AFK
+                : underground ? DistanceMode.UNDERGROUND : DistanceMode.NORMAL;
+        return new PlayerDistanceStatus(
+                player.getName(), player.getWorld().getName(), selectedProfileName, mode,
+                player.getClientViewDistance(), selectedProfileMaximum, worldViewDistance,
+                targetViewDistanceMap.getOrDefault(playerId, calculated.viewDistance()),
+                targetSendDistanceMap.getOrDefault(playerId, calculated.sendDistance()),
+                player.getViewDistance(), player.getSendViewDistance(), simulationDistance,
+                afkMaximum, undergroundMaximum,
+                undergroundSettings.bypassPermissionEnabled(),
+                player.hasPermission(UndergroundSettings.BYPASS_PERMISSION));
+    }
+
     public void refreshCachedState(Player player) {
         ResolvedProfile profile = seeMore.getSeeMoreConfig().resolveProfile(player);
         String cachedProfile = selectedProfileNames.get(player.getUniqueId());
@@ -105,8 +153,10 @@ public class ViewDistanceController {
     public void removePlayer(Player player) {
         UUID playerId = player.getUniqueId();
         selectedProfileNames.remove(playerId);
+        selectedProfileMaximums.remove(playerId);
         simulationDistances.remove(playerId);
         afkPlayers.remove(playerId);
+        undergroundPlayers.remove(playerId);
         targetSendDistanceMap.remove(playerId);
         targetViewDistanceMap.remove(playerId);
         cancelAndRemove(sendDistanceUpdateTasks, playerId);
@@ -163,8 +213,10 @@ public class ViewDistanceController {
         targetSendDistanceMap.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
         targetViewDistanceMap.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
         selectedProfileNames.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
+        selectedProfileMaximums.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
         simulationDistances.entrySet().removeIf(entry -> Bukkit.getPlayer(entry.getKey()) == null);
         afkPlayers.removeIf(uuid -> Bukkit.getPlayer(uuid) == null);
+        undergroundPlayers.removeIf(uuid -> Bukkit.getPlayer(uuid) == null);
     }
 
     private void schedulePermissionChecks() {

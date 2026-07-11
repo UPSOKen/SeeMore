@@ -5,6 +5,7 @@ import com.froobworld.seemore.config.AfkSettings;
 import com.froobworld.seemore.config.DurationParser;
 import com.froobworld.seemore.controller.ViewDistanceController;
 import com.froobworld.seemore.scheduler.ScheduledTask;
+import com.froobworld.seemore.underground.UndergroundTracker;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Input;
@@ -23,12 +24,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class AfkTracker implements Listener {
     private final SeeMore seeMore;
     private final ViewDistanceController controller;
+    private final UndergroundTracker undergroundTracker;
     private final Map<UUID, TrackedPlayer> trackedPlayers = new ConcurrentHashMap<>();
     private ScheduledTask checkTask;
 
-    public AfkTracker(SeeMore seeMore, ViewDistanceController controller) {
+    public AfkTracker(SeeMore seeMore, ViewDistanceController controller, UndergroundTracker undergroundTracker) {
         this.seeMore = seeMore;
         this.controller = controller;
+        this.undergroundTracker = undergroundTracker;
         Bukkit.getPluginManager().registerEvents(this, seeMore);
         long now = System.nanoTime();
         for (Player player : Bukkit.getOnlinePlayers()) {
@@ -173,7 +176,9 @@ public final class AfkTracker implements Listener {
     }
 
     private void synchronizeControllerState(Player player, AfkState state) {
-        controller.setAfk(player, state.isAfk());
+        boolean afk = state.isAfk();
+        controller.setAfk(player, afk);
+        undergroundTracker.onAfkChanged(player, afk);
     }
 
     private void scheduleChecks() {

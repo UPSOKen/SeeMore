@@ -11,7 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class ConfigMigrator {
-    public static final int CURRENT_VERSION = 4;
+    public static final int CURRENT_VERSION = 5;
     private static final Pattern VERSION_LINE = Pattern.compile("(?m)^([ \\t]*version[ \\t]*:[ \\t]*)\\d+([ \\t]*(?:#.*)?)$");
     private static final Pattern CONFIG_LINE = Pattern.compile("(?m)^([ \\t]*)([^\\r\\n]*)$");
     private static final Pattern PERMISSIONS_HEADER = Pattern.compile("permissions[ \\t]*:[ \\t]*(?:#.*)?");
@@ -51,6 +51,9 @@ public final class ConfigMigrator {
         }
         if (!existing.contains("afk")) {
             additions.append(lineSeparator).append(AFK_DEFAULTS.replace("\n", lineSeparator));
+        }
+        if (!existing.contains("underground")) {
+            additions.append(lineSeparator).append(UNDERGROUND_DEFAULTS.replace("\n", lineSeparator));
         }
         if (!migrated.endsWith("\n") && !migrated.endsWith("\r")) {
             migrated += lineSeparator;
@@ -159,5 +162,21 @@ public final class ConfigMigrator {
                 minimum-look-change: 2.0
                 required-look-events: 2
                 look-event-window: 2s
+            """;
+
+    private static final String UNDERGROUND_DEFAULTS = """
+            # Reduce the view distance of active players who remain underground.
+            underground:
+              enabled: false
+              enable-bypass-permission: false
+              world-list-mode: whitelist
+              worlds:
+                - world
+              check-interval: 5s
+              enter-after: 2m
+              exit-after: 5s
+              minimum-depth: 10
+              exit-depth: 5
+              maximum-view-distance: 8
             """;
 }

@@ -3,7 +3,8 @@
 > [!IMPORTANT]
 > This is a community fork of [froobynooby/SeeMore](https://github.com/froobynooby/SeeMore). It targets Paper
 > 26.1.2 and adds layered permission-based view-distance overrides, input-aware AFK distance reduction, configurable
-> permission/AFK checks, effective simulation-distance flooring, and automatic migration of v1/v2/v3 configs.
+> permission/AFK checks, underground distance reduction, effective simulation-distance flooring, and automatic
+> migration of v1/v2/v3/v4 configs.
 
 Upstream project links (these builds do not include the fork changes):
 [Source](https://github.com/froobynooby/SeeMore) |
@@ -12,7 +13,8 @@ Upstream project links (these builds do not include the fork changes):
 
 ## About
 SeeMore is a Paper 26.1.2 plugin that sets each player's server-side view distance from their client settings,
-ordered permission overrides, and AFK state. It remains compatible with Folia's scheduler model.
+ordered permission overrides, AFK state, and sustained underground state. It remains compatible with Folia's
+scheduler model.
 
 ## Configuration
 
@@ -20,7 +22,7 @@ ordered permission overrides, and AFK state. It remains compatible with Folia's 
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 4
+version: 5
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -74,6 +76,21 @@ afk:
     minimum-look-change: 2.0
     required-look-events: 2
     look-event-window: 2s
+
+# Active players who remain underground can use a lower view-distance cap.
+underground:
+  enabled: false
+  # Allow seemore.underground.bypass to exempt individual players.
+  enable-bypass-permission: false
+  world-list-mode: whitelist
+  worlds:
+    - world
+  check-interval: 5s
+  enter-after: 2m
+  exit-after: 5s
+  minimum-depth: 10
+  exit-depth: 5
+  maximum-view-distance: 8
 ```
 
 The top-level `world-settings` section is the baseline for every player. For the first matching permission group,
@@ -91,6 +108,13 @@ Existing `update-delay`, `log-changes`, `world-settings`, permission entries, an
 plugin creates a versioned backup such as `config.yml.v3.bak` before changing the file. Version 3's
 `permissions.groups` key is automatically renamed to `permissions.group-overrides`.
 
+Version 5 adds underground detection with conservative, disabled-by-default settings. It performs a cached local
+surface-height lookup for eligible active players, enters underground mode only after continuous qualifying time,
+and restores the normal distance after continuous surface evidence. In eligible worlds without skylight, such as
+the Nether, the entire world qualifies as underground. AFK mode takes precedence. To exempt individual players,
+set `underground.enable-bypass-permission` to `true` and grant `seemore.underground.bypass`. The config option and
+permission both default to false, including for operators.
+
 Version 4 intentionally changes how a group's `default` interacts with explicitly named top-level worlds. A named
 top-level world now remains in effect unless the matching group explicitly overrides that world. Review permission
 groups after upgrading if they previously relied on a group `default` replacing every top-level world entry.
@@ -102,6 +126,11 @@ groups after upgrading if they previously relied on a group `default` replacing 
 | `/seemore reload`  | `seemore.command.reload`  | Reload the plugin's configuration.                      |
 | `/seemore average` | `seemore.command.average` | Show the effective average view distance of the worlds. |
 | `/seemore players` | `seemore.command.players` | Show the server-side view distance of all players.      |
+| `/seemore info [world]` | `seemore.command.info` | Show server, world, profile, and underground settings. |
+| `/seemore status [player]` | `seemore.command.status` | Show one player's live and target distance state. |
+
+Inspecting another player with `/seemore status <player>` additionally requires
+`seemore.command.status.others`.
 
 ## Building
 Building requires Java 25.

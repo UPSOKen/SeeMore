@@ -33,7 +33,7 @@ class ConfigMigratorTest {
 
         assertTrue(migrated);
         YamlConfiguration migratedConfig = YamlConfiguration.loadConfiguration(configFile.toFile());
-        assertEquals(4, migratedConfig.getInt("version"));
+        assertEquals(5, migratedConfig.getInt("version"));
         assertEquals(123, migratedConfig.getInt("update-delay"));
         assertFalse(migratedConfig.getBoolean("log-changes"));
         assertEquals(17, migratedConfig.getInt("world-settings.default.maximum-view-distance"));
@@ -42,6 +42,16 @@ class ConfigMigratorTest {
         assertEquals("10s", migratedConfig.getString("afk.check-interval"));
         assertEquals("10m", migratedConfig.getString("afk.timeout"));
         assertEquals(8, migratedConfig.getInt("afk.maximum-view-distance"));
+        assertFalse(migratedConfig.getBoolean("underground.enabled"));
+        assertFalse(migratedConfig.getBoolean("underground.enable-bypass-permission"));
+        assertEquals("whitelist", migratedConfig.getString("underground.world-list-mode"));
+        assertEquals(java.util.List.of("world"), migratedConfig.getStringList("underground.worlds"));
+        assertEquals("5s", migratedConfig.getString("underground.check-interval"));
+        assertEquals("2m", migratedConfig.getString("underground.enter-after"));
+        assertEquals("5s", migratedConfig.getString("underground.exit-after"));
+        assertEquals(10, migratedConfig.getInt("underground.minimum-depth"));
+        assertEquals(5, migratedConfig.getInt("underground.exit-depth"));
+        assertEquals(8, migratedConfig.getInt("underground.maximum-view-distance"));
         assertDoesNotThrow(() -> SeeMoreConfig.parseSnapshot(migratedConfig));
         assertTrue(Files.exists(temporaryDirectory.resolve("config.yml.v2.bak")));
         assertEquals(originalConfig, Files.readString(temporaryDirectory.resolve("config.yml.v2.bak")));
@@ -61,7 +71,7 @@ class ConfigMigratorTest {
         ConfigMigrator.migrate(configFile);
 
         YamlConfiguration migratedConfig = YamlConfiguration.loadConfiguration(configFile.toFile());
-        assertEquals(4, migratedConfig.getInt("version"));
+        assertEquals(5, migratedConfig.getInt("version"));
         assertFalse(migratedConfig.getBoolean("log-changes"));
         assertTrue(Files.exists(temporaryDirectory.resolve("config.yml.v1.bak")));
     }
@@ -90,7 +100,7 @@ class ConfigMigratorTest {
 
         assertTrue(migrated);
         YamlConfiguration migratedConfig = YamlConfiguration.loadConfiguration(configFile.toFile());
-        assertEquals(4, migratedConfig.getInt("version"));
+        assertEquals(5, migratedConfig.getInt("version"));
         assertFalse(migratedConfig.contains("permissions.groups"));
         java.util.Map<?, ?> override = migratedConfig.getMapList("permissions.group-overrides").getFirst();
         assertEquals("admin", override.get("name"));
@@ -102,7 +112,7 @@ class ConfigMigratorTest {
     }
 
     @Test
-    void leavesVersionFourByteForByteUnchanged() throws Exception {
+    void migratesVersionFourByAddingUndergroundDefaults() throws Exception {
         Path configFile = temporaryDirectory.resolve("config.yml");
         String versionFourConfig = """
                 version: 4
@@ -112,9 +122,28 @@ class ConfigMigratorTest {
 
         boolean migrated = ConfigMigrator.migrate(configFile);
 
+        assertTrue(migrated);
+        YamlConfiguration migratedConfig = YamlConfiguration.loadConfiguration(configFile.toFile());
+        assertEquals(5, migratedConfig.getInt("version"));
+        assertFalse(migratedConfig.getBoolean("underground.enabled"));
+        assertTrue(Files.exists(temporaryDirectory.resolve("config.yml.v4.bak")));
+        assertEquals(versionFourConfig, Files.readString(temporaryDirectory.resolve("config.yml.v4.bak")));
+    }
+
+    @Test
+    void leavesVersionFiveByteForByteUnchanged() throws Exception {
+        Path configFile = temporaryDirectory.resolve("config.yml");
+        String versionFiveConfig = """
+                version: 5
+                update-delay: 600
+                """;
+        Files.writeString(configFile, versionFiveConfig);
+
+        boolean migrated = ConfigMigrator.migrate(configFile);
+
         assertFalse(migrated);
-        assertEquals(versionFourConfig, Files.readString(configFile));
-        assertFalse(Files.exists(temporaryDirectory.resolve("config.yml.v4.bak")));
+        assertEquals(versionFiveConfig, Files.readString(configFile));
+        assertFalse(Files.exists(temporaryDirectory.resolve("config.yml.v5.bak")));
     }
 
     @Test

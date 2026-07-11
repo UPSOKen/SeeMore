@@ -65,6 +65,18 @@ public final class SeeMoreConfig {
         return requireSnapshot().afkSettings();
     }
 
+    public UndergroundSettings undergroundSettings() {
+        return requireSnapshot().undergroundSettings();
+    }
+
+    public WorldSettings defaultWorldSettings() {
+        return requireSnapshot().defaultWorldSettings();
+    }
+
+    public List<DistanceProfile> permissionProfiles() {
+        return requireSnapshot().permissionProfiles();
+    }
+
     static Snapshot parseSnapshot(YamlConfiguration yaml) {
         int version = yaml.getInt("version", -1);
         if (version != ConfigMigrator.CURRENT_VERSION) {
@@ -116,8 +128,45 @@ public final class SeeMoreConfig {
 
         AfkSettings afkSettings = new AfkSettings(yaml.getBoolean("afk.enabled", true), afkCheckInterval,
                 afkTimeout, afkMaximum, minimumLookChange, requiredLookEvents, lookEventWindow);
+
+        WorldListMode worldListMode = WorldListMode.parse(
+                yaml.getString("underground.world-list-mode", "whitelist"), "underground.world-list-mode");
+        Set<String> undergroundWorlds = new HashSet<>();
+        for (String worldName : yaml.getStringList("underground.worlds")) {
+            if (worldName.isBlank()) {
+                throw new IllegalArgumentException("underground.worlds must not contain blank world names.");
+            }
+            undergroundWorlds.add(normalize(worldName));
+        }
+        Duration undergroundCheckInterval = DurationParser.parse(
+                yaml.getString("underground.check-interval", "5s"), "underground.check-interval");
+        requireMinimumInterval(undergroundCheckInterval, "underground.check-interval");
+        Duration enterAfter = DurationParser.parse(
+                yaml.getString("underground.enter-after", "2m"), "underground.enter-after");
+        Duration exitAfter = DurationParser.parse(
+                yaml.getString("underground.exit-after", "5s"), "underground.exit-after");
+        int minimumDepth = yaml.getInt("underground.minimum-depth", 10);
+        if (minimumDepth < 1) {
+            throw new IllegalArgumentException("underground.minimum-depth must be at least 1.");
+        }
+        int exitDepth = yaml.getInt("underground.exit-depth", 5);
+        if (exitDepth < 1 || exitDepth > minimumDepth) {
+            throw new IllegalArgumentException(
+                    "underground.exit-depth must be between 1 and underground.minimum-depth.");
+        }
+        int undergroundMaximum = yaml.getInt("underground.maximum-view-distance", 8);
+        validateDistance("underground.maximum-view-distance", undergroundMaximum);
+        if (undergroundMaximum < 0) {
+            throw new IllegalArgumentException(
+                    "underground.maximum-view-distance must be between 2 and 32.");
+        }
+        UndergroundSettings undergroundSettings = new UndergroundSettings(
+                yaml.getBoolean("underground.enabled", false),
+                yaml.getBoolean("underground.enable-bypass-permission", false),
+                worldListMode, undergroundWorlds,
+                undergroundCheckInterval, enterAfter, exitAfter, minimumDepth, exitDepth, undergroundMaximum);
         return new Snapshot(updateDelay, yaml.getBoolean("log-changes", true), defaultWorldSettings,
-                List.copyOf(permissionProfiles), permissionCheckInterval, afkSettings);
+                List.copyOf(permissionProfiles), permissionCheckInterval, afkSettings, undergroundSettings);
     }
 
     private static List<DistanceProfile> parsePermissionProfiles(List<?> rawProfiles) {
@@ -232,6 +281,6 @@ public final class SeeMoreConfig {
 
     record Snapshot(int updateDelayTicks, boolean logChanges, WorldSettings defaultWorldSettings,
                     List<DistanceProfile> permissionProfiles, Duration permissionCheckInterval,
-                    AfkSettings afkSettings) {
+                    AfkSettings afkSettings, UndergroundSettings undergroundSettings) {
     }
 }
