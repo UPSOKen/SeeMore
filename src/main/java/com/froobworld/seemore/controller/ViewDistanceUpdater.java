@@ -38,7 +38,8 @@ public class ViewDistanceUpdater implements Listener {
 
     @EventHandler
     private void onWorldChange(PlayerChangedWorldEvent event) {
-        controller.setTargetViewDistance(event.getPlayer(), event.getPlayer().getClientViewDistance(), false, false);
+        controller.refreshProfileAndSetTargetViewDistance(
+                event.getPlayer(), event.getPlayer().getClientViewDistance(), false, false);
     }
 
 }

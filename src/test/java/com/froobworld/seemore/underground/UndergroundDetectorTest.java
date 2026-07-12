@@ -28,4 +28,12 @@ class UndergroundDetectorTest {
         assertTrue(UndergroundDetector.isBypassed(true, true));
         assertFalse(UndergroundDetector.isBypassed(true, false));
     }
+
+    @Test
+    void naturalCeilingEvidenceIsRequiredOnlyWhenTheCheckIsEnabled() {
+        assertTrue(UndergroundDetector.hasRequiredEvidence(true, false, false));
+        assertFalse(UndergroundDetector.hasRequiredEvidence(true, true, false));
+        assertTrue(UndergroundDetector.hasRequiredEvidence(true, true, true));
+        assertFalse(UndergroundDetector.hasRequiredEvidence(false, false, true));
+    }
 }

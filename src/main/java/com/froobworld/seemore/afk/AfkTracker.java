@@ -135,7 +135,6 @@ public final class AfkTracker implements Listener {
         for (TrackedPlayer trackedPlayer : trackedPlayers.values()) {
             seeMore.getSchedulerHook().runEntityTaskAsap(() -> {
                 AfkState.Transition transition = checkAfkState(trackedPlayer, settings);
-                controller.refreshCachedState(trackedPlayer.player());
                 if (transition != AfkState.Transition.NONE) {
                     synchronizeControllerState(trackedPlayer.player(), trackedPlayer.state());
                 }
@@ -177,8 +176,22 @@ public final class AfkTracker implements Listener {
 
     private void synchronizeControllerState(Player player, AfkState state) {
         boolean afk = state.isAfk();
+        AfkSettings settings = seeMore.getSeeMoreConfig().afkSettings();
+        if (!afk) {
+            sendAlert(player, settings.restoringMessage());
+        }
         controller.setAfk(player, afk);
         undergroundTracker.onAfkChanged(player, afk);
+        if (afk) {
+            sendAlert(player, settings.reducedMessage());
+        }
+    }
+
+    private static void sendAlert(Player player, String message) {
+        net.kyori.adventure.text.Component alert = AfkAlert.parse(message);
+        if (alert != null) {
+            player.sendMessage(alert);
+        }
     }
 
     private void scheduleChecks() {

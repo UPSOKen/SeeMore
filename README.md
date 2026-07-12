@@ -3,8 +3,8 @@
 > [!IMPORTANT]
 > This is a community fork of [froobynooby/SeeMore](https://github.com/froobynooby/SeeMore). It targets Paper
 > 26.1.2 and adds layered permission-based view-distance overrides, input-aware AFK distance reduction, configurable
-> permission/AFK checks, underground distance reduction, effective simulation-distance flooring, and automatic
-> migration of v1/v2/v3/v4 configs.
+> AFK checks, experimental underground distance reduction, effective simulation-distance flooring, and automatic
+> migration of v1/v2/v3/v4/v5/v6/v7 configs.
 
 Upstream project links (these builds do not include the fork changes):
 [Source](https://github.com/froobynooby/SeeMore) |
@@ -22,7 +22,7 @@ scheduler model.
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 5
+version: 8
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -42,8 +42,6 @@ world-settings:
 
 # Permission overrides are checked from top to bottom. The first matching permission wins.
 permissions:
-  # Set to disabled to check only when another event recalculates view distance.
-  check-interval: 30s
   # Resolution order for the matching group:
   # 1. Exact group world override
   # 2. Exact top-level world setting
@@ -69,15 +67,20 @@ permissions:
 # Passive position changes, such as water in an AFK pool, are not activity.
 afk:
   enabled: true
-  check-interval: 10s
-  timeout: 10m
-  maximum-view-distance: 8
+  check-interval: 1m
+  timeout: 15m
+  maximum-view-distance: 10
+  minimum-reduction: 3
+  # Blank values send no message. Non-blank values support Adventure MiniMessage formatting.
+  alerts:
+    reduced-message: ""
+    restoring-message: ""
   wake-up:
     minimum-look-change: 2.0
     required-look-events: 2
     look-event-window: 2s
 
-# Active players who remain underground can use a lower view-distance cap.
+# Experimental and disabled by default. Active players who remain underground can use a lower view-distance cap.
 underground:
   enabled: false
   # Allow seemore.underground.bypass to exempt individual players.
@@ -91,6 +94,12 @@ underground:
   minimum-depth: 10
   exit-depth: 5
   maximum-view-distance: 8
+  natural-ceiling:
+    enabled: true
+    search-distance: 32
+    minimum-thickness: 2
+    additional-materials: []
+    excluded-materials: []
 ```
 
 The top-level `world-settings` section is the baseline for every player. For the first matching permission group,
@@ -99,14 +108,30 @@ the top-level exact world entry remains in effect. For worlds not named in eithe
 overrides the top-level `default`. A group may omit `default` entirely and define only the worlds it needs to change.
 
 Groups are still checked from top to bottom, and only the first matching group is used. View distance never drops
-below the player's effective simulation distance, and SeeMore does not change simulation distance itself.
+below the player's effective simulation distance, and SeeMore does not change simulation distance itself. A player's
+permission profile is selected on join and refreshed only on world change or `/seemore reload`; AFK, underground, and
+client-setting changes reuse the cached profile.
 
 ### Configuration migration
 
-On first startup, version 1, version 2, and version 3 configurations are automatically migrated to version 4.
+On first startup, version 1 through version 7 configurations are automatically migrated to version 8.
 Existing `update-delay`, `log-changes`, `world-settings`, permission entries, and AFK values remain in place. The
 plugin creates a versioned backup such as `config.yml.v3.bak` before changing the file. Version 3's
 `permissions.groups` key is automatically renamed to `permissions.group-overrides`.
+
+Version 8 removes interval permission polling and the experimental version 7 chunk-refresh switch. Permission profiles
+are now cached by lifecycle event, preventing background permission checks from recalculating player distances. Fresh
+configurations use a 15-minute AFK timeout, a one-minute check interval, a view-distance cap of 10, and require at least
+three chunks of useful radius reduction. Existing AFK timing and cap values are preserved during migration. AFK alert
+messages are blank and silent by default; configured messages support Adventure MiniMessage formatting.
+
+Version 6 adds conservative natural-ceiling evidence to underground detection. After the local-depth check passes,
+SeeMore ignores passable blocks above the player and searches at most 32 blocks for the first solid ceiling. That
+ceiling and the configured thickness behind it must match natural stone, ore, or selected geological materials.
+Constructed ceilings stop the search and prevent underground mode. Administrators can add or exclude material enum
+names for custom terrain and builds. The ceiling requirement also applies in eligible worlds without skylight;
+disabling it restores version 5's whole-dimension behavior. Existing version 5 underground settings are preserved
+during migration.
 
 Version 5 adds underground detection with conservative, disabled-by-default settings. It performs a cached local
 surface-height lookup for eligible active players, enters underground mode only after continuous qualifying time,

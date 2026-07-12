@@ -19,4 +19,9 @@ public final class UndergroundDetector {
     public static boolean isBypassed(boolean bypassPermissionEnabled, boolean hasBypassPermission) {
         return bypassPermissionEnabled && hasBypassPermission;
     }
+
+    public static boolean hasRequiredEvidence(boolean depthEvidence, boolean naturalCeilingCheckEnabled,
+                                              boolean naturalCeilingEvidence) {
+        return depthEvidence && (!naturalCeilingCheckEnabled || naturalCeilingEvidence);
+    }
 }

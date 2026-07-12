@@ -5,6 +5,7 @@ import com.froobworld.seemore.config.*;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -17,6 +18,8 @@ import org.jetbrains.annotations.Nullable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static net.kyori.adventure.text.Component.*;
 
@@ -48,6 +51,24 @@ public final class InfoCommand implements CommandExecutor, TabCompleter {
         }
 
         sender.sendMessage(CommandFormat.header("SeeMore Server Information"));
+        AfkSettings afk = seeMore.getSeeMoreConfig().afkSettings();
+        Component afkState = afk.enabled()
+                ? text("Enabled", NamedTextColor.GREEN)
+                    .append(text(" (timeout ", NamedTextColor.GRAY))
+                    .append(CommandFormat.value(formatDuration(afk.timeout())))
+                    .append(text(", check ", NamedTextColor.GRAY))
+                    .append(CommandFormat.value(formatDuration(afk.checkInterval())))
+                    .append(text(", cap ", NamedTextColor.GRAY))
+                    .append(CommandFormat.value(afk.maximumViewDistance()))
+                    .append(text(", minimum reduction ", NamedTextColor.GRAY))
+                    .append(CommandFormat.value(afk.minimumReduction()))
+                    .append(text(")", NamedTextColor.GRAY))
+                : text("Disabled", NamedTextColor.RED);
+        sender.sendMessage(CommandFormat.line("AFK reduction", afkState));
+        boolean alertsConfigured = !afk.reducedMessage().isBlank() || !afk.restoringMessage().isBlank();
+        sender.sendMessage(CommandFormat.line("AFK alerts", alertsConfigured
+                ? text("Configured", NamedTextColor.GREEN)
+                : text("Silent", NamedTextColor.GRAY)));
         for (World world : worlds) {
             sender.sendMessage(empty());
             sendWorldInformation(sender, world);
@@ -86,12 +107,16 @@ public final class InfoCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(CommandFormat.line("Underground detection",
                     text("Excluded", NamedTextColor.RED)));
         } else {
+            NaturalCeilingSettings ceiling = underground.naturalCeiling();
             Component state = text("Enabled", NamedTextColor.GREEN)
                     .append(text(" (cap ", NamedTextColor.GRAY))
                     .append(text(underground.maximumViewDistance(), NamedTextColor.YELLOW))
                     .append(text(")", NamedTextColor.GRAY));
             if (!world.hasSkyLight()) {
-                state = state.append(text(" — no skylight; entire world qualifies", NamedTextColor.DARK_GRAY));
+                String noSkyBehavior = ceiling.enabled()
+                        ? " — no skylight; natural ceiling still required"
+                        : " — no skylight; depth automatically qualifies";
+                state = state.append(text(noSkyBehavior, NamedTextColor.DARK_GRAY));
             }
             sender.sendMessage(CommandFormat.line("Underground detection", state));
             sender.sendMessage(CommandFormat.line("  Entry",
@@ -102,6 +127,21 @@ public final class InfoCommand implements CommandExecutor, TabCompleter {
                             + formatDuration(underground.exitAfter()))));
             sender.sendMessage(CommandFormat.line("  Check interval",
                     CommandFormat.value(formatDuration(underground.checkInterval()))));
+            Component ceilingStatus = ceiling.enabled()
+                    ? text("Enabled", NamedTextColor.GREEN)
+                        .append(text(" (search " + ceiling.searchDistance() + " blocks, thickness "
+                                + ceiling.minimumThickness() + ")", NamedTextColor.DARK_GRAY))
+                    : text("Disabled", NamedTextColor.RED)
+                        .append(text(" (depth only)", NamedTextColor.DARK_GRAY));
+            sender.sendMessage(CommandFormat.line("  Natural ceiling", ceilingStatus));
+            if (!ceiling.additionalMaterials().isEmpty()) {
+                sender.sendMessage(CommandFormat.line("    Additional materials",
+                        CommandFormat.value(materialNames(ceiling.additionalMaterials()))));
+            }
+            if (!ceiling.excludedMaterials().isEmpty()) {
+                sender.sendMessage(CommandFormat.line("    Excluded materials",
+                        CommandFormat.value(materialNames(ceiling.excludedMaterials()))));
+            }
         }
     }
 
@@ -124,6 +164,11 @@ public final class InfoCommand implements CommandExecutor, TabCompleter {
             return seconds / 60 + "m";
         }
         return seconds + "s";
+    }
+
+    private static String materialNames(Set<Material> materials) {
+        return materials.stream().map(Enum::name).sorted()
+                .collect(Collectors.joining(", "));
     }
 
     @Override

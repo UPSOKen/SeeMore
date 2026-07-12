@@ -81,6 +81,7 @@ public final class StatusCommand implements CommandExecutor, TabCompleter {
         messages.add(CommandFormat.line("Profile", CommandFormat.value(status.profileName())));
         messages.add(CommandFormat.line("Current mode", mode(status.mode())));
         messages.add(CommandFormat.line("Underground bypass", bypassStatus(status)));
+        messages.add(CommandFormat.line("Natural ceiling check", naturalCeilingStatus(status)));
         messages.add(CommandFormat.line("Client requested distance",
                 CommandFormat.value(status.clientViewDistance())));
         messages.add(CommandFormat.line("Configured profile cap",
@@ -114,8 +115,16 @@ public final class StatusCommand implements CommandExecutor, TabCompleter {
                     NamedTextColor.YELLOW)
                     .append(text(" (underground ceiling " + status.undergroundMaximum() + ")",
                             NamedTextColor.DARK_GRAY));
-            case AFK -> text(Math.min(profileMaximum, status.afkMaximum()), NamedTextColor.RED)
-                    .append(text(" (AFK ceiling " + status.afkMaximum() + ")", NamedTextColor.DARK_GRAY));
+            case AFK -> {
+                int normalRequested = Math.min(profileMaximum, status.clientViewDistance());
+                if (normalRequested - status.afkMaximum() < status.afkMinimumReduction()) {
+                    yield text("Not reduced", NamedTextColor.GREEN)
+                            .append(text(" (saves fewer than " + status.afkMinimumReduction()
+                                    + " chunks)", NamedTextColor.DARK_GRAY));
+                }
+                yield text(Math.min(profileMaximum, status.afkMaximum()), NamedTextColor.RED)
+                        .append(text(" (AFK ceiling " + status.afkMaximum() + ")", NamedTextColor.DARK_GRAY));
+            }
         };
     }
 
@@ -127,6 +136,15 @@ public final class StatusCommand implements CommandExecutor, TabCompleter {
             return text("ACTIVE", NamedTextColor.GREEN);
         }
         return text("NOT GRANTED", NamedTextColor.GRAY);
+    }
+
+    private static Component naturalCeilingStatus(PlayerDistanceStatus status) {
+        if (!status.naturalCeilingCheckEnabled()) {
+            return text("DISABLED", NamedTextColor.RED);
+        }
+        return text("ENABLED", NamedTextColor.GREEN)
+                .append(text(" (" + status.naturalCeilingSearchDistance() + " blocks, thickness "
+                        + status.minimumNaturalCeilingThickness() + ")", NamedTextColor.DARK_GRAY));
     }
 
     private static Player findPlayer(String name) {

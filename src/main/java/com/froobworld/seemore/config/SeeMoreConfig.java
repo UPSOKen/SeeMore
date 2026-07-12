@@ -1,6 +1,7 @@
 package com.froobworld.seemore.config;
 
 import com.froobworld.seemore.SeeMore;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -57,10 +58,6 @@ public final class SeeMoreConfig {
                 current.defaultWorldSettings(), player.getWorld().getName());
     }
 
-    public Duration permissionCheckInterval() {
-        return requireSnapshot().permissionCheckInterval();
-    }
-
     public AfkSettings afkSettings() {
         return requireSnapshot().afkSettings();
     }
@@ -87,7 +84,6 @@ public final class SeeMoreConfig {
         if (updateDelay < 0) {
             throw new IllegalArgumentException("update-delay must not be negative.");
         }
-
         ConfigurationSection worldSection = yaml.getConfigurationSection("world-settings");
         if (worldSection == null) {
             throw new IllegalArgumentException("Missing world-settings section.");
@@ -101,20 +97,18 @@ public final class SeeMoreConfig {
         List<DistanceProfile> permissionProfiles = parsePermissionProfiles(
                 yaml.getList("permissions.group-overrides", List.of()));
 
-        String permissionIntervalValue = yaml.getString("permissions.check-interval", "30s");
-        Duration permissionCheckInterval = isDisabled(permissionIntervalValue)
-                ? null
-                : DurationParser.parse(permissionIntervalValue, "permissions.check-interval");
-        requireMinimumInterval(permissionCheckInterval, "permissions.check-interval");
-
-        int afkMaximum = yaml.getInt("afk.maximum-view-distance", 8);
+        int afkMaximum = yaml.getInt("afk.maximum-view-distance", 10);
         validateDistance("afk.maximum-view-distance", afkMaximum);
         if (afkMaximum < 0) {
             throw new IllegalArgumentException("afk.maximum-view-distance must be between 2 and 32.");
         }
-        Duration afkCheckInterval = DurationParser.parse(yaml.getString("afk.check-interval", "10s"), "afk.check-interval");
+        int minimumAfkReduction = yaml.getInt("afk.minimum-reduction", 3);
+        if (minimumAfkReduction < 1 || minimumAfkReduction > 30) {
+            throw new IllegalArgumentException("afk.minimum-reduction must be between 1 and 30.");
+        }
+        Duration afkCheckInterval = DurationParser.parse(yaml.getString("afk.check-interval", "1m"), "afk.check-interval");
         requireMinimumInterval(afkCheckInterval, "afk.check-interval");
-        Duration afkTimeout = DurationParser.parse(yaml.getString("afk.timeout", "10m"), "afk.timeout");
+        Duration afkTimeout = DurationParser.parse(yaml.getString("afk.timeout", "15m"), "afk.timeout");
         double minimumLookChange = yaml.getDouble("afk.wake-up.minimum-look-change", 2.0);
         int requiredLookEvents = yaml.getInt("afk.wake-up.required-look-events", 2);
         Duration lookEventWindow = DurationParser.parse(
@@ -127,7 +121,9 @@ public final class SeeMoreConfig {
         }
 
         AfkSettings afkSettings = new AfkSettings(yaml.getBoolean("afk.enabled", true), afkCheckInterval,
-                afkTimeout, afkMaximum, minimumLookChange, requiredLookEvents, lookEventWindow);
+                afkTimeout, afkMaximum, minimumAfkReduction, minimumLookChange, requiredLookEvents,
+                lookEventWindow, yaml.getString("afk.alerts.reduced-message", ""),
+                yaml.getString("afk.alerts.restoring-message", ""));
 
         WorldListMode worldListMode = WorldListMode.parse(
                 yaml.getString("underground.world-list-mode", "whitelist"), "underground.world-list-mode");
@@ -160,13 +156,32 @@ public final class SeeMoreConfig {
             throw new IllegalArgumentException(
                     "underground.maximum-view-distance must be between 2 and 32.");
         }
+        int ceilingSearchDistance = yaml.getInt("underground.natural-ceiling.search-distance", 32);
+        if (ceilingSearchDistance < 1 || ceilingSearchDistance > 128) {
+            throw new IllegalArgumentException(
+                    "underground.natural-ceiling.search-distance must be between 1 and 128.");
+        }
+        int minimumCeilingThickness = yaml.getInt("underground.natural-ceiling.minimum-thickness", 2);
+        if (minimumCeilingThickness < 1 || minimumCeilingThickness > 16) {
+            throw new IllegalArgumentException(
+                    "underground.natural-ceiling.minimum-thickness must be between 1 and 16.");
+        }
+        Set<Material> additionalCeilingMaterials = parseMaterials(
+                yaml, "underground.natural-ceiling.additional-materials");
+        Set<Material> excludedCeilingMaterials = parseMaterials(
+                yaml, "underground.natural-ceiling.excluded-materials");
+        NaturalCeilingSettings naturalCeilingSettings = new NaturalCeilingSettings(
+                yaml.getBoolean("underground.natural-ceiling.enabled", true),
+                ceilingSearchDistance, minimumCeilingThickness,
+                additionalCeilingMaterials, excludedCeilingMaterials);
         UndergroundSettings undergroundSettings = new UndergroundSettings(
                 yaml.getBoolean("underground.enabled", false),
                 yaml.getBoolean("underground.enable-bypass-permission", false),
                 worldListMode, undergroundWorlds,
-                undergroundCheckInterval, enterAfter, exitAfter, minimumDepth, exitDepth, undergroundMaximum);
+                undergroundCheckInterval, enterAfter, exitAfter, minimumDepth, exitDepth, undergroundMaximum,
+                naturalCeilingSettings);
         return new Snapshot(updateDelay, yaml.getBoolean("log-changes", true), defaultWorldSettings,
-                List.copyOf(permissionProfiles), permissionCheckInterval, afkSettings, undergroundSettings);
+                List.copyOf(permissionProfiles), afkSettings, undergroundSettings);
     }
 
     private static List<DistanceProfile> parsePermissionProfiles(List<?> rawProfiles) {
@@ -238,8 +253,21 @@ public final class SeeMoreConfig {
         return value;
     }
 
-    private static boolean isDisabled(String value) {
-        return value != null && (value.equalsIgnoreCase("disabled") || value.equalsIgnoreCase("off"));
+    private static Set<Material> parseMaterials(YamlConfiguration yaml, String path) {
+        Set<Material> materials = new HashSet<>();
+        for (Object rawMaterial : yaml.getList(path, List.of())) {
+            if (!(rawMaterial instanceof String materialName) || materialName.isBlank()) {
+                throw new IllegalArgumentException(path + " must contain only material names.");
+            }
+            Material material;
+            try {
+                material = Material.valueOf(materialName.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException(path + " contains an unknown block material: " + materialName);
+            }
+            materials.add(material);
+        }
+        return Set.copyOf(materials);
     }
 
     private static void requireMinimumInterval(Duration interval, String path) {
@@ -280,7 +308,7 @@ public final class SeeMoreConfig {
     }
 
     record Snapshot(int updateDelayTicks, boolean logChanges, WorldSettings defaultWorldSettings,
-                    List<DistanceProfile> permissionProfiles, Duration permissionCheckInterval,
+                    List<DistanceProfile> permissionProfiles,
                     AfkSettings afkSettings, UndergroundSettings undergroundSettings) {
     }
 }

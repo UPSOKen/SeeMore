@@ -1,7 +1,7 @@
 # Configuration for SeeMore.
 
 # Please don't change this!
-version: 5
+version: 8
 
 # The delay (in ticks) before a player's view distance is lowered after their client settings change.
 #  * This stops players overloading the server by constantly changing their view distance.
@@ -21,9 +21,6 @@ world-settings:
 
 # Permission overrides are checked from top to bottom. The first matching permission wins.
 permissions:
-  # How often online players are checked for permission changes.
-  # Set to disabled to check only when another event recalculates view distance.
-  check-interval: 30s
   # Exact group world override -> top-level exact world -> group default override -> top-level default.
   group-overrides: []
 
@@ -31,16 +28,22 @@ permissions:
 afk:
   enabled: true
   # AFK status can take up to this much extra time to be noticed.
-  check-interval: 10s
-  timeout: 10m
-  maximum-view-distance: 8
+  check-interval: 1m
+  timeout: 15m
+  maximum-view-distance: 10
+  # Skip AFK mode when it would save fewer than this many chunks of radius.
+  minimum-reduction: 3
+  # Blank messages are completely silent. Non-blank messages support Adventure MiniMessage formatting.
+  alerts:
+    reduced-message: ""
+    restoring-message: ""
   wake-up:
     # Keyboard input and deliberate actions wake immediately. Camera motion uses these safeguards.
     minimum-look-change: 2.0
     required-look-events: 2
     look-event-window: 2s
 
-# Reduce the view distance of active players who remain below the local surface.
+# Experimental, opt-in reduction for active players who remain below the local surface.
 # AFK mode takes precedence over underground mode.
 underground:
   enabled: false
@@ -60,3 +63,13 @@ underground:
   # Once underground, the player must get this close to the surface before the exit timer begins.
   exit-depth: 5
   maximum-view-distance: 8
+  # Require the nearest solid ceiling to look like naturally generated underground terrain.
+  natural-ceiling:
+    enabled: true
+    # Air, water, and other passable blocks are ignored up to this distance.
+    search-distance: 32
+    # Number of consecutive natural blocks required at and above the ceiling.
+    minimum-thickness: 2
+    # Material enum names that should be added to or removed from the built-in conservative list.
+    additional-materials: []
+    excluded-materials: []

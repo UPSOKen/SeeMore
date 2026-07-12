@@ -2,6 +2,7 @@ package com.froobworld.seemore.underground;
 
 import com.froobworld.seemore.SeeMore;
 import com.froobworld.seemore.config.DurationParser;
+import com.froobworld.seemore.config.NaturalCeilingSettings;
 import com.froobworld.seemore.config.UndergroundSettings;
 import com.froobworld.seemore.controller.ViewDistanceController;
 import com.froobworld.seemore.scheduler.ScheduledTask;
@@ -25,6 +26,7 @@ public final class UndergroundTracker implements Listener {
     private final SeeMore seeMore;
     private final ViewDistanceController controller;
     private final Map<UUID, TrackedPlayer> trackedPlayers = new ConcurrentHashMap<>();
+    private final NaturalCeilingClassifier ceilingClassifier = new NaturalCeilingClassifier();
     private ScheduledTask checkTask;
 
     public UndergroundTracker(SeeMore seeMore, ViewDistanceController controller) {
@@ -76,7 +78,11 @@ public final class UndergroundTracker implements Listener {
 
     private void checkPlayers() {
         UndergroundSettings settings = seeMore.getSeeMoreConfig().undergroundSettings();
-        for (TrackedPlayer trackedPlayer : trackedPlayers.values()) {
+        for (Map.Entry<UUID, TrackedPlayer> entry : trackedPlayers.entrySet()) {
+            if (!controller.shouldRunNormalChecks(entry.getKey())) {
+                continue;
+            }
+            TrackedPlayer trackedPlayer = entry.getValue();
             seeMore.getSchedulerHook().runEntityTaskAsap(
                     () -> checkPlayer(trackedPlayer, settings),
                     () -> trackedPlayers.remove(trackedPlayer.player().getUniqueId()),
@@ -91,7 +97,7 @@ public final class UndergroundTracker implements Listener {
                 settings.isWorldEnabled(player.getWorld().getName()),
                 controller.isAfk(player),
                 UndergroundDetector.isBypassed(settings.bypassPermissionEnabled(),
-                        player.hasPermission(UndergroundSettings.BYPASS_PERMISSION)));
+                        controller.isUndergroundBypassGranted(player)));
         if (!eligible) {
             reset(trackedPlayer);
             return;
@@ -102,8 +108,18 @@ public final class UndergroundTracker implements Listener {
         int surfaceY = world.getHighestBlockAt(eyeLocation, HeightMap.MOTION_BLOCKING_NO_LEAVES).getY();
         int requiredDepth = UndergroundDetector.requiredDepth(
                 trackedPlayer.state().isUnderground(), settings.minimumDepth(), settings.exitDepth());
-        boolean candidate = UndergroundDetector.isCandidate(
+        boolean depthCandidate = UndergroundDetector.isCandidate(
                 world.hasSkyLight(), surfaceY, eyeLocation.getBlockY(), requiredDepth);
+        NaturalCeilingSettings ceilingSettings = settings.naturalCeiling();
+        boolean naturalCeiling = false;
+        if (depthCandidate && ceilingSettings.enabled()) {
+            naturalCeiling = NaturalCeilingDetector.hasNaturalCeiling(
+                    offset -> ceilingBlock(world, eyeLocation, offset),
+                    ceilingSettings,
+                    ceilingClassifier);
+        }
+        boolean candidate = UndergroundDetector.hasRequiredEvidence(
+                depthCandidate, ceilingSettings.enabled(), naturalCeiling);
         UndergroundState.Transition transition = trackedPlayer.state().update(
                 candidate, System.nanoTime(), settings.enterAfter(), settings.exitAfter());
         if (transition == UndergroundState.Transition.BECAME_UNDERGROUND) {
@@ -119,6 +135,16 @@ public final class UndergroundTracker implements Listener {
                 || controller.isUnderground(trackedPlayer.player())) {
             controller.setUnderground(trackedPlayer.player(), false);
         }
+    }
+
+    private static CeilingBlock ceilingBlock(World world, Location eyeLocation, int offset) {
+        int y = eyeLocation.getBlockY() + offset;
+        if (y < world.getMinHeight() || y >= world.getMaxHeight()) {
+            return null;
+        }
+        org.bukkit.block.Block block = world.getBlockAt(
+                eyeLocation.getBlockX(), y, eyeLocation.getBlockZ());
+        return new CeilingBlock(block.getType(), block.isPassable());
     }
 
     private void scheduleChecks() {

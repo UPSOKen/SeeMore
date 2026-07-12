@@ -11,11 +11,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class ConfigMigrator {
-    public static final int CURRENT_VERSION = 5;
+    public static final int CURRENT_VERSION = 8;
     private static final Pattern VERSION_LINE = Pattern.compile("(?m)^([ \\t]*version[ \\t]*:[ \\t]*)\\d+([ \\t]*(?:#.*)?)$");
     private static final Pattern CONFIG_LINE = Pattern.compile("(?m)^([ \\t]*)([^\\r\\n]*)$");
     private static final Pattern PERMISSIONS_HEADER = Pattern.compile("permissions[ \\t]*:[ \\t]*(?:#.*)?");
     private static final Pattern GROUPS_KEY = Pattern.compile("groups([ \\t]*:.*)");
+    private static final Pattern UNDERGROUND_HEADER = Pattern.compile(
+            "(?m)^underground[ \\t]*:[ \\t]*(?:#.*)?\\R");
+    private static final Pattern AFK_HEADER = Pattern.compile(
+            "(?m)^afk[ \\t]*:[ \\t]*(?:#.*)?\\R");
+    private static final Pattern CHUNK_REFRESH_KEY = Pattern.compile(
+            "(?m)^chunk-refresh-system[ \\t]*:.*(?:\\R|$)");
 
     private ConfigMigrator() {
     }
@@ -39,6 +45,20 @@ public final class ConfigMigrator {
         String migrated = replaceVersion(original);
         if (existing.contains("permissions.groups")) {
             migrated = renamePermissionGroups(migrated);
+        }
+        if (existing.contains("permissions.check-interval")) {
+            migrated = removeDirectChild(migrated, "permissions", "check-interval");
+        }
+        if (existing.contains("chunk-refresh-system")) {
+            migrated = CHUNK_REFRESH_KEY.matcher(migrated).replaceFirst("");
+        }
+        if (existing.contains("underground") && !existing.contains("underground.natural-ceiling")) {
+            migrated = insertNaturalCeilingDefaults(migrated, lineSeparator);
+        }
+        if (existing.contains("afk") && (!existing.contains("afk.minimum-reduction")
+                || !existing.contains("afk.alerts"))) {
+            migrated = insertAfkReductionDefaults(migrated, lineSeparator,
+                    !existing.contains("afk.minimum-reduction"), !existing.contains("afk.alerts"));
         }
         StringBuilder additions = new StringBuilder();
         if (version == 1 && !existing.contains("log-changes")) {
@@ -126,6 +146,60 @@ public final class ConfigMigrator {
                 + config.substring(candidateEnd);
     }
 
+    private static String insertNaturalCeilingDefaults(String config, String lineSeparator) {
+        Matcher matcher = UNDERGROUND_HEADER.matcher(config);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Could not find the underground section in the legacy config.");
+        }
+        String defaults = NATURAL_CEILING_DEFAULTS.replace("\n", lineSeparator);
+        return config.substring(0, matcher.end()) + defaults + config.substring(matcher.end());
+    }
+
+    private static String insertAfkReductionDefaults(String config, String lineSeparator,
+                                                     boolean addMinimumReduction, boolean addAlerts) {
+        Matcher matcher = AFK_HEADER.matcher(config);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Could not find the afk section in the legacy config.");
+        }
+        StringBuilder defaults = new StringBuilder();
+        if (addMinimumReduction) {
+            defaults.append("  minimum-reduction: 3").append(lineSeparator);
+        }
+        if (addAlerts) {
+            defaults.append("  alerts:").append(lineSeparator)
+                    .append("    reduced-message: \"\"").append(lineSeparator)
+                    .append("    restoring-message: \"\"").append(lineSeparator);
+        }
+        return config.substring(0, matcher.end()) + defaults + config.substring(matcher.end());
+    }
+
+    private static String removeDirectChild(String config, String sectionName, String key) {
+        Matcher lines = CONFIG_LINE.matcher(config);
+        boolean inSection = false;
+        int sectionIndent = -1;
+        while (lines.find()) {
+            String content = lines.group(2);
+            if (content.isBlank() || content.stripLeading().startsWith("#")) {
+                continue;
+            }
+            int indentation = lines.group(1).length();
+            if (!inSection) {
+                if (content.matches(Pattern.quote(sectionName) + "[ \\t]*:[ \\t]*(?:#.*)?")) {
+                    inSection = true;
+                    sectionIndent = indentation;
+                }
+                continue;
+            }
+            if (indentation <= sectionIndent) {
+                break;
+            }
+            if (content.matches(Pattern.quote(key) + "[ \\t]*:.*")) {
+                return config.substring(0, lines.start()) + config.substring(lines.end());
+            }
+        }
+        return config;
+    }
+
     private static Path nextBackupPath(Path configFile, int version) {
         Path candidate = configFile.resolveSibling(configFile.getFileName() + ".v" + version + ".bak");
         int suffix = 1;
@@ -146,8 +220,6 @@ public final class ConfigMigrator {
     private static final String PERMISSION_DEFAULTS = """
             # Permission profiles are checked from top to bottom. The first matching permission wins.
             permissions:
-              # Set to disabled to check only when another event recalculates view distance.
-              check-interval: 30s
               group-overrides: []
             """;
 
@@ -155,9 +227,13 @@ public final class ConfigMigrator {
             # Reduce the view distance of inactive players without treating passive position changes as activity.
             afk:
               enabled: true
-              check-interval: 10s
-              timeout: 10m
-              maximum-view-distance: 8
+              check-interval: 1m
+              timeout: 15m
+              maximum-view-distance: 10
+              minimum-reduction: 3
+              alerts:
+                reduced-message: ""
+                restoring-message: ""
               wake-up:
                 minimum-look-change: 2.0
                 required-look-events: 2
@@ -178,5 +254,20 @@ public final class ConfigMigrator {
               minimum-depth: 10
               exit-depth: 5
               maximum-view-distance: 8
+              natural-ceiling:
+                enabled: true
+                search-distance: 32
+                minimum-thickness: 2
+                additional-materials: []
+                excluded-materials: []
+            """;
+
+    private static final String NATURAL_CEILING_DEFAULTS = """
+              natural-ceiling:
+                enabled: true
+                search-distance: 32
+                minimum-thickness: 2
+                additional-materials: []
+                excluded-materials: []
             """;
 }

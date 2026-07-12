@@ -7,7 +7,8 @@ import java.util.stream.Collectors;
 public record UndergroundSettings(boolean enabled, boolean bypassPermissionEnabled,
                                   WorldListMode worldListMode, Set<String> worlds,
                                   Duration checkInterval, Duration enterAfter, Duration exitAfter,
-                                  int minimumDepth, int exitDepth, int maximumViewDistance) {
+                                  int minimumDepth, int exitDepth, int maximumViewDistance,
+                                  NaturalCeilingSettings naturalCeiling) {
     public static final String BYPASS_PERMISSION = "seemore.underground.bypass";
 
     public UndergroundSettings {
